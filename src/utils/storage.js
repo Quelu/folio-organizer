@@ -1,0 +1,18 @@
+const STORAGE_KEY = 'binder-organizer-state';
+
+export const loadState = () => {
+  try {
+    const serialized = localStorage.getItem(STORAGE_KEY);
+    return serialized ? JSON.parse(serialized) : null;
+  } catch {
+    return null;
+  }
+};
+
+export const saveState = (state) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Ignore write errors (storage full, private mode, etc.)
+  }
+};
