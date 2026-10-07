@@ -1,7 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Hash, Plus, Minus, LocateFixed, Undo2, CheckCircle2, MapPin, History } from 'lucide-react';
+import { Hash, Plus, Minus, LocateFixed, Undo2, CheckCircle2, MapPin, History, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence, useAnimate } from 'motion/react';
 import { parseCardInput, getLocation } from '../../utils/calculations';
+import { getCounts } from '../../utils/cards';
+
+const FoilTag = () => (
+  <span className="foil-text font-bold">
+    <Sparkles size={11} className="inline -mt-0.5 text-fuchsia-300" /> foil
+  </span>
+);
 
 const LocationText = ({ loc }) => (
   <>
@@ -19,13 +26,15 @@ const StatusLine = ({ binder, value, parsed, lastAction }) => {
     if (!parsed) {
       return (
         <span className="text-rose-300/90">
-          Format attendu : <code>12</code>, <code>12x3</code> ou une liste <code>4 8 15x2</code>
+          Format attendu : <code>12</code>, <code>12x3</code>, <code>12f</code> (foil) ou une liste{' '}
+          <code>4 8f 15x2</code>
         </span>
       );
     }
     if (parsed.length === 1) {
-      const { cardNumber, qty } = parsed[0];
-      const owned = binder.cards[String(cardNumber)]?.quantity ?? 0;
+      const { cardNumber, qty, foil } = parsed[0];
+      const { normal, foil: foils } = getCounts(binder.cards[String(cardNumber)]);
+      const owned = normal + foils;
       return (
         <span className="text-slate-400 flex items-center gap-1.5">
           <MapPin size={13} className="text-indigo-300 flex-shrink-0" />
@@ -33,20 +42,36 @@ const StatusLine = ({ binder, value, parsed, lastAction }) => {
             <LocationText loc={getLocation(cardNumber, binder)} />
             <span className="text-slate-600"> · </span>
             {owned > 0 ? (
-              <span className="text-amber-300">déjà ×{owned}</span>
+              <span className="text-amber-300">
+                déjà ×{owned}
+                {foils > 0 && ` (dont ${foils} foil)`}
+              </span>
             ) : (
               <span className="text-emerald-300">nouvelle carte</span>
             )}
             {qty > 1 && <span className="text-slate-500"> (+{qty})</span>}
+            {foil && (
+              <>
+                <span className="text-slate-600"> · </span>
+                <FoilTag />
+              </>
+            )}
           </span>
         </span>
       );
     }
     const copies = parsed.reduce((s, e) => s + e.qty, 0);
+    const foilCopies = parsed.reduce((s, e) => s + (e.foil ? e.qty : 0), 0);
     return (
       <span className="text-slate-400">
         <b className="text-white">{parsed.length}</b> cartes · <b className="text-white">{copies}</b> exemplaires
         à ajouter
+        {foilCopies > 0 && (
+          <>
+            {' '}
+            (dont {foilCopies} <FoilTag />)
+          </>
+        )}
       </span>
     );
   }
@@ -66,6 +91,7 @@ const StatusLine = ({ binder, value, parsed, lastAction }) => {
               <span>
                 Annulé : #{lastAction.cardNumber}
                 {lastAction.qty > 1 && ` ×${lastAction.qty}`}
+                {lastAction.foil && ' foil'}
               </span>
             </>
           ) : lastAction.type === 'batch' ? (
@@ -82,6 +108,12 @@ const StatusLine = ({ binder, value, parsed, lastAction }) => {
               )}
               <span>
                 <b className="text-white">#{lastAction.cardNumber}</b>
+                {lastAction.foil && (
+                  <>
+                    {' '}
+                    <FoilTag />
+                  </>
+                )}
                 {lastAction.type === 'add' ? ' ajoutée → ' : ' se trouve '}
                 <LocationText loc={getLocation(lastAction.cardNumber, binder)} />
                 {lastAction.type === 'add' && (
@@ -114,8 +146,10 @@ const CardInputBar = ({
   canUndo,
 }) => {
   const [value, setValue] = useState('');
+  // Sticky foil mode: handy when sorting a pile of foils
+  const [foilMode, setFoilMode] = useState(false);
   const [fieldScope, animateField] = useAnimate();
-  const parsed = value.trim() ? parseCardInput(value) : null;
+  const parsed = value.trim() ? parseCardInput(value, foilMode) : null;
   const single = parsed?.length === 1 ? parsed[0] : null;
 
   // Re-focus input when binder changes
@@ -138,7 +172,7 @@ const CardInputBar = ({
       if (value.trim()) shake();
       return;
     }
-    flash('52,211,153');
+    flash(parsed.some((e) => e.foil) ? '232,121,249' : '52,211,153');
     onAdd(parsed);
     setValue('');
     refocus();
@@ -159,9 +193,9 @@ const CardInputBar = ({
       if (value.trim()) shake();
       return;
     }
-    flash(delta > 0 ? '52,211,153' : '251,113,133');
-    if (delta > 0) onAdd([{ cardNumber: single.cardNumber, qty: 1 }]);
-    else onDecrement(single.cardNumber);
+    flash(delta > 0 ? (single.foil ? '232,121,249' : '52,211,153') : '251,113,133');
+    if (delta > 0) onAdd([{ cardNumber: single.cardNumber, qty: 1, foil: single.foil }]);
+    else onDecrement(single.cardNumber, single.foil);
     refocus();
   };
 
@@ -183,6 +217,10 @@ const CardInputBar = ({
         break;
       case 'Escape':
         setValue('');
+        break;
+      case '*':
+        e.preventDefault();
+        setFoilMode((f) => !f);
         break;
       case 'Backspace':
         if (isEmpty) {
@@ -214,13 +252,32 @@ const CardInputBar = ({
               value={value}
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="N° de carte… (ex : 42, 42x2, 3 17 88)"
+              placeholder={foilMode ? 'N° de carte foil… (ex : 42, 42x2)' : 'N° de carte… (ex : 42, 42f, 42x2, 3 17 88)'}
               autoFocus
               aria-label="Numéro de carte"
-              className={`field text-base pl-10 py-3 ${parsed === null && value.trim() ? 'ring-rose-400/60' : ''}`}
+              className={`field text-base pl-10 py-3 ${parsed === null && value.trim() ? 'ring-rose-400/60' : ''} ${
+                foilMode ? 'ring-2 ring-fuchsia-400/60 bg-fuchsia-950/20' : ''
+              }`}
             />
           </div>
 
+          <motion.button
+            onClick={() => {
+              setFoilMode((f) => !f);
+              refocus();
+            }}
+            whileTap={{ scale: 0.92 }}
+            aria-pressed={foilMode}
+            title="Mode foil : les prochaines cartes sont ajoutées en foil (touche *, ou suffixe f : 42f)"
+            className={`btn px-3 py-3 ring-1 ring-inset transition-all ${
+              foilMode
+                ? 'foil-surface text-white ring-white/40 shadow-lg shadow-fuchsia-500/30'
+                : 'bg-white/5 text-slate-400 ring-white/10 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            <Sparkles size={16} />
+            <span className="hidden sm:inline">Foil</span>
+          </motion.button>
           <button
             onClick={() => step(-1)}
             disabled={!single}
@@ -292,6 +349,7 @@ const CardInputBar = ({
                   >
                     #{r.cardNumber}
                     {r.qty > 1 && <span className="opacity-60"> ×{r.qty}</span>}
+                    {r.foil && <Sparkles size={10} className="inline ml-0.5 -mt-0.5 text-fuchsia-300" />}
                   </motion.button>
                 ))}
               </AnimatePresence>
@@ -309,6 +367,10 @@ const CardInputBar = ({
             <span>
               <kbd className="kbd">+</kbd>
               <kbd className="kbd ml-0.5">−</kbd> Quantité
+            </span>
+            <span>
+              <kbd className="kbd">f</kbd>
+              <kbd className="kbd ml-0.5">*</kbd> Foil
             </span>
             <span>
               <kbd className="kbd">⌫</kbd> Annuler

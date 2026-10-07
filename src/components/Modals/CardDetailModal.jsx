@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, Minus, Plus, Trash2, Check, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Minus, Plus, Trash2, Check, X, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { fetchLorcastCard } from '../../utils/lorcastApi';
 import { getLocation } from '../../utils/calculations';
 import { getGame } from '../../data/games';
 import TiltCard from '../ui/TiltCard';
+import { getCounts } from '../../utils/cards';
 
 /** Image for the detail view: owned cards already have one, others are previewed from Lorcast. */
 const useCardImage = (binder, cardNumber) => {
@@ -32,6 +33,48 @@ const slideVariants = {
   exit: (dir) => ({ opacity: 0, x: dir * -70, rotateY: dir * -35 }),
 };
 
+/** Quantity stepper for one variant (normal or foil). */
+const Stepper = ({ label, value, onChange, foil }) => (
+  <div
+    className={`flex items-center rounded-xl ring-1 ring-inset ${
+      foil && value > 0 ? 'ring-fuchsia-400/40 bg-fuchsia-950/20' : 'ring-white/10 bg-slate-950/50'
+    }`}
+  >
+    <button
+      onClick={() => onChange(Math.max(0, value - 1))}
+      disabled={value === 0}
+      className="btn-icon p-2.5"
+      aria-label={`Retirer un exemplaire ${label.toLowerCase()}`}
+    >
+      <Minus size={15} />
+    </button>
+    <div className="w-14 text-center leading-none">
+      <span className="block overflow-hidden text-lg font-bold text-white tabular-nums">
+        <motion.span
+          key={value}
+          className="inline-block"
+          initial={{ y: -14, opacity: 0, scale: 1.3 }}
+          animate={{ y: 0, opacity: 1, scale: 1 }}
+          transition={{ type: 'spring', stiffness: 500, damping: 22 }}
+        >
+          {value}
+        </motion.span>
+      </span>
+      <span className={`text-[10px] uppercase tracking-wider ${foil ? 'foil-text font-bold' : 'text-slate-500'}`}>
+        {foil && <Sparkles size={9} className="inline -mt-0.5 mr-0.5 text-fuchsia-300" />}
+        {label}
+      </span>
+    </div>
+    <button
+      onClick={() => onChange(value + 1)}
+      className="btn-icon p-2.5"
+      aria-label={`Ajouter un exemplaire ${label.toLowerCase()}`}
+    >
+      <Plus size={15} />
+    </button>
+  </div>
+);
+
 const Stat = ({ label, value }) => (
   <div className="rounded-lg bg-white/[0.03] ring-1 ring-inset ring-white/5 px-3 py-2">
     <div className="text-[10px] uppercase tracking-wider text-slate-500">{label}</div>
@@ -39,25 +82,27 @@ const Stat = ({ label, value }) => (
   </div>
 );
 
-const CardDetailModal = ({ binder, cardNumber, onClose, onNavigate, onSetQuantity }) => {
+const CardDetailModal = ({ binder, cardNumber, onClose, onNavigate, onSetCounts }) => {
   const isOpen = cardNumber != null;
 
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e) => {
       if (e.target.tagName === 'INPUT') return;
-      const qty = binder.cards[String(cardNumber)]?.quantity ?? 0;
+      const { normal, foil } = getCounts(binder.cards[String(cardNumber)]);
       if (e.key === 'Escape') onClose();
       else if (e.key === 'ArrowLeft' && cardNumber > 1) onNavigate(cardNumber - 1);
       else if (e.key === 'ArrowRight') onNavigate(cardNumber + 1);
-      else if (e.key === '+' || e.key === '=') onSetQuantity(cardNumber, qty + 1);
-      else if (e.key === '-') onSetQuantity(cardNumber, qty - 1);
+      else if (e.key === '+' || e.key === '=') onSetCounts(cardNumber, { normal: normal + 1, foil });
+      else if (e.key === '-') onSetCounts(cardNumber, { normal: Math.max(0, normal - 1), foil });
+      else if (e.key === 'f' || e.key === '*') onSetCounts(cardNumber, { normal, foil: foil + 1 });
+      else if (e.key === 'F') onSetCounts(cardNumber, { normal, foil: Math.max(0, foil - 1) });
       else return;
       e.preventDefault();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, binder.cards, cardNumber, onClose, onNavigate, onSetQuantity]);
+  }, [isOpen, binder.cards, cardNumber, onClose, onNavigate, onSetCounts]);
 
   return (
     <AnimatePresence>
@@ -86,7 +131,7 @@ const CardDetailModal = ({ binder, cardNumber, onClose, onNavigate, onSetQuantit
                 cardNumber={cardNumber}
                 onClose={onClose}
                 onNavigate={onNavigate}
-                onSetQuantity={onSetQuantity}
+                onSetCounts={onSetCounts}
               />
             </motion.div>
           </div>
@@ -96,13 +141,14 @@ const CardDetailModal = ({ binder, cardNumber, onClose, onNavigate, onSetQuantit
   );
 };
 
-const DetailBody = ({ binder, cardNumber, onClose, onNavigate, onSetQuantity }) => {
+const DetailBody = ({ binder, cardNumber, onClose, onNavigate, onSetCounts }) => {
   // Direction of the last card change, to slide the visual the right way
   const [nav, setNav] = useState({ card: cardNumber, dir: 0 });
   if (nav.card !== cardNumber) setNav({ card: cardNumber, dir: cardNumber > nav.card ? 1 : -1 });
   const card = binder.cards[String(cardNumber)];
   const quantity = card?.quantity ?? 0;
   const exported = card?.exportedQuantity ?? 0;
+  const { normal, foil } = getCounts(card);
   const loc = getLocation(cardNumber, binder);
   const imageUrl = useCardImage(binder, cardNumber);
   const game = getGame(binder.gameType);
@@ -134,6 +180,12 @@ const DetailBody = ({ binder, cardNumber, onClose, onNavigate, onSetQuantity }) 
                   quantity === 0 ? 'opacity-60 grayscale' : ''
                 }`}
               >
+                {foil > 0 && (
+                  <div
+                    aria-hidden
+                    className="foil-sheen pointer-events-none absolute inset-0 z-[4] mix-blend-color-dodge"
+                  />
+                )}
                 {imageUrl ? (
                   <motion.img
                     key={imageUrl}
@@ -205,38 +257,21 @@ const DetailBody = ({ binder, cardNumber, onClose, onNavigate, onSetQuantity }) 
 
         <div className="mt-5">
           <span className="label">Exemplaires</span>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center rounded-xl ring-1 ring-inset ring-white/10 bg-slate-950/50">
-              <button
-                onClick={() => onSetQuantity(cardNumber, quantity - 1)}
-                disabled={quantity === 0}
-                className="btn-icon p-3"
-                aria-label="Retirer un exemplaire"
-              >
-                <Minus size={16} />
-              </button>
-              <span className="w-12 text-center text-xl font-bold text-white tabular-nums overflow-hidden">
-                <motion.span
-                  key={quantity}
-                  className="inline-block"
-                  initial={{ y: -14, opacity: 0, scale: 1.3 }}
-                  animate={{ y: 0, opacity: 1, scale: 1 }}
-                  transition={{ type: 'spring', stiffness: 500, damping: 22 }}
-                >
-                  {quantity}
-                </motion.span>
-              </span>
-              <button
-                onClick={() => onSetQuantity(cardNumber, quantity + 1)}
-                className="btn-icon p-3"
-                aria-label="Ajouter un exemplaire"
-              >
-                <Plus size={16} />
-              </button>
-            </div>
+          <div className="flex items-center gap-3 flex-wrap">
+            <Stepper
+              label="Normal"
+              value={normal}
+              onChange={(v) => onSetCounts(cardNumber, { normal: v, foil })}
+            />
+            <Stepper
+              label="Foil"
+              foil
+              value={foil}
+              onChange={(v) => onSetCounts(cardNumber, { normal, foil: v })}
+            />
             {quantity > 0 && (
               <button
-                onClick={() => onSetQuantity(cardNumber, 0)}
+                onClick={() => onSetCounts(cardNumber, { normal: 0, foil: 0 })}
                 className="btn-icon text-rose-300/80 hover:text-rose-300 hover:bg-rose-500/10"
                 title="Retirer toutes les copies"
                 aria-label="Retirer toutes les copies"
@@ -267,7 +302,10 @@ const DetailBody = ({ binder, cardNumber, onClose, onNavigate, onSetQuantity }) 
             <kbd className="kbd">←</kbd> <kbd className="kbd">→</kbd> Carte voisine
           </span>
           <span>
-            <kbd className="kbd">+</kbd> <kbd className="kbd">−</kbd> Quantité
+            <kbd className="kbd">+</kbd> <kbd className="kbd">−</kbd> Normal
+          </span>
+          <span>
+            <kbd className="kbd">f</kbd> <kbd className="kbd">⇧F</kbd> Foil
           </span>
           <span>
             <kbd className="kbd">Esc</kbd> Fermer

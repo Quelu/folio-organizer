@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import Modal from '../ui/Modal';
-import { GAMES, LORCANA_SETS, GRID_PRESETS, getGame } from '../../data/games';
+import { GAMES, GRID_PRESETS, getGame } from '../../data/games';
+import { useLorcanaSets } from '../../hooks/useLorcanaSets';
 
 const toForm = (binder) =>
   binder
@@ -13,7 +14,7 @@ const toForm = (binder) =>
         gridCols: binder.gridCols,
         gridRows: binder.gridRows,
       }
-    : { name: '', gameType: 'lorcana', setCode: '1', setSize: 204, gridCols: 3, gridRows: 3 };
+    : { name: '', gameType: 'lorcana', setCode: null, setSize: 204, gridCols: 3, gridRows: 3 };
 
 /** Mini grid preview used on the grid preset tiles. */
 const GridGlyph = ({ cols, rows, active }) => (
@@ -29,6 +30,7 @@ const GridGlyph = ({ cols, rows, active }) => (
 
 const FormBody = ({ binder, onClose, onSubmit }) => {
   const [form, setForm] = useState(() => toForm(binder));
+  const lorcanaSets = useLorcanaSets();
   const isEdit = Boolean(binder);
 
   const update = (patch) => setForm((f) => ({ ...f, ...patch }));
@@ -45,7 +47,7 @@ const FormBody = ({ binder, onClose, onSubmit }) => {
     onSubmit({
       name: form.name,
       gameType: form.gameType,
-      setCode: form.gameType === 'lorcana' ? form.setCode : '',
+      setCode: form.gameType === 'lorcana' ? (form.setCode ?? lorcanaSets[lorcanaSets.length - 1].code) : '',
       setSize: setSize > 0 ? setSize : null,
       gridCols: form.gridCols,
       gridRows: form.gridRows,
@@ -106,13 +108,14 @@ const FormBody = ({ binder, onClose, onSubmit }) => {
             </label>
             <select
               id="binder-set"
-              value={form.setCode}
+              value={form.setCode ?? lorcanaSets[lorcanaSets.length - 1].code}
               onChange={(e) => update({ setCode: e.target.value })}
               className="field"
             >
-              {LORCANA_SETS.map((s) => (
+              {[...lorcanaSets].reverse().map((s) => (
                 <option key={s.code} value={s.code}>
-                  {s.code} — {s.name}
+                  {s.code} — {s.nameFr ?? s.name}
+                  {s.nameFr && s.nameFr !== s.name ? ` (${s.name})` : ''}
                 </option>
               ))}
             </select>

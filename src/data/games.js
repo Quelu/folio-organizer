@@ -35,22 +35,42 @@ export const GAMES = {
 
 export const getGame = (gameType) => GAMES[gameType] ?? GAMES.other;
 
+/**
+ * Numbered Lorcana chapters. French names from disneylorcana.com/fr-FR; the list is refreshed
+ * from Lorcast at runtime (see useLorcanaSets) so new chapters show up without a release.
+ */
 export const LORCANA_SETS = [
-  { code: '1', name: 'The First Chapter' },
-  { code: '2', name: 'Rise of the Floodborn' },
-  { code: '3', name: 'Into the Inklands' },
-  { code: '4', name: "Ursula's Return" },
-  { code: '5', name: 'Shimmering Skies' },
-  { code: '6', name: 'Azurite Sea' },
-  { code: '7', name: "Archazia's Island" },
-  { code: '8', name: 'Reign of Jafar' },
-  { code: '9', name: 'Fabled' },
-  { code: '10', name: 'Whispers in the Well' },
-  { code: '11', name: 'Winterspell' },
-  { code: '12', name: 'Wilds Unknown' },
+  { code: '1', name: 'The First Chapter', nameFr: 'Premier Chapitre' },
+  { code: '2', name: 'Rise of the Floodborn', nameFr: "L'Ascension des Floodborn" },
+  { code: '3', name: 'Into the Inklands', nameFr: "Les Terres d'Encres" },
+  { code: '4', name: "Ursula's Return", nameFr: "Le Retour d'Ursula" },
+  { code: '5', name: 'Shimmering Skies', nameFr: 'Ciel Scintillant' },
+  { code: '6', name: 'Azurite Sea', nameFr: 'La Mer Azurite' },
+  { code: '7', name: "Archazia's Island", nameFr: "L'Île d'Archazia" },
+  { code: '8', name: 'Reign of Jafar', nameFr: 'Le Règne de Jafar' },
+  { code: '9', name: 'Fabled', nameFr: 'Fabuleux' },
+  { code: '10', name: 'Whispers in the Well', nameFr: 'Lueurs dans les Profondeurs' },
+  { code: '11', name: 'Winterspell', nameFr: 'Givresort' },
+  { code: '12', name: 'Wilds Unknown', nameFr: 'Contrées Inconnues' },
+  { code: '13', name: 'Attack of the Vine!', nameFr: 'Invasion Épineuse' },
+  { code: '14', name: 'Hyperia City', nameFr: 'Hyperia City' },
 ];
 
-export const getLorcanaSetName = (code) => LORCANA_SETS.find((s) => s.code === code)?.name ?? null;
+const FR_NAMES = Object.fromEntries(LORCANA_SETS.map((s) => [s.code, s.nameFr]));
+
+/** Merges a fetched set list with the built-in French names. */
+export const withFrenchNames = (sets) => sets.map((s) => ({ ...s, nameFr: FR_NAMES[s.code] ?? s.nameFr ?? null }));
+
+let knownSets = LORCANA_SETS;
+export const setKnownLorcanaSets = (sets) => {
+  knownSets = sets;
+};
+
+/** French name when known, English otherwise. */
+export const getLorcanaSetName = (code) => {
+  const set = knownSets.find((s) => s.code === code) ?? LORCANA_SETS.find((s) => s.code === code);
+  return set ? (set.nameFr ?? set.name) : null;
+};
 
 export const GRID_PRESETS = [
   { cols: 3, rows: 3, label: '3×3', hint: '9 poches · standard' },

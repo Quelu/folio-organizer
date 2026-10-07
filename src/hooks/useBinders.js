@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { loadState, saveState } from '../utils/storage';
 import { fetchLorcastCard } from '../utils/lorcastApi';
 import { getGame } from '../data/games';
+import { withCounts, changeCopies } from '../utils/cards';
 
 const MAX_HISTORY = 300;
 
@@ -23,22 +24,6 @@ const migrate = (state) => ({
     ...b,
   })),
 });
-
-/** Applies a quantity change to a card, keeping exportedQuantity consistent. */
-const withQuantity = (cards, numStr, quantity) => {
-  const next = { ...cards };
-  if (quantity <= 0) {
-    delete next[numStr];
-    return next;
-  }
-  const existing = cards[numStr];
-  next[numStr] = {
-    quantity,
-    exportedQuantity: Math.min(existing?.exportedQuantity ?? 0, quantity),
-    imageUrl: existing?.imageUrl ?? null,
-  };
-  return next;
-};
 
 const mapBinder = (prev, binderId, fn) => ({
   ...prev,
@@ -151,34 +136,40 @@ export const useBinders = () => {
       const b = prev.binders.find((x) => x.id === binderId);
       if (!b) return prev;
       let cards = b.cards;
-      for (const { cardNumber, qty } of entries) {
-        const numStr = String(cardNumber);
-        cards = withQuantity(cards, numStr, (cards[numStr]?.quantity ?? 0) + qty);
+      for (const { cardNumber, qty, foil } of entries) {
+        cards = changeCopies(cards, String(cardNumber), qty, foil);
       }
       const history = [
         ...prev.addHistory,
-        ...entries.map(({ cardNumber, qty }) => ({ binderId, cardNumber, qty, at: Date.now() })),
+        ...entries.map(({ cardNumber, qty, foil }) => ({
+          binderId,
+          cardNumber,
+          qty,
+          foil: Boolean(foil),
+          at: Date.now(),
+        })),
       ].slice(-MAX_HISTORY);
       return { ...mapBinder(prev, binderId, (x) => ({ ...x, cards })), addHistory: history };
     });
   }, []);
 
-  const setCardQuantity = useCallback((binderId, cardNumber, quantity) => {
+  /** Sets the exact number of normal and foil copies of a card. */
+  const setCardCounts = useCallback((binderId, cardNumber, { normal, foil }) => {
     setState((prev) =>
       mapBinder(prev, binderId, (b) => ({
         ...b,
-        cards: withQuantity(b.cards, String(cardNumber), quantity),
+        cards: withCounts(b.cards, String(cardNumber), normal, foil),
       }))
     );
   }, []);
 
-  const removeCard = useCallback((binderId, cardNumber) => {
+  /** Removes one copy, foil first when preferFoil is set, normal first otherwise. */
+  const removeCard = useCallback((binderId, cardNumber, preferFoil = false) => {
     setState((prev) =>
       mapBinder(prev, binderId, (b) => {
         const numStr = String(cardNumber);
-        const existing = b.cards[numStr];
-        if (!existing) return b;
-        return { ...b, cards: withQuantity(b.cards, numStr, existing.quantity - 1) };
+        if (!b.cards[numStr]) return b;
+        return { ...b, cards: changeCopies(b.cards, numStr, -1, preferFoil) };
       })
     );
   }, []);
@@ -200,9 +191,8 @@ export const useBinders = () => {
       return {
         ...mapBinder(prev, binderId, (b) => {
           const numStr = String(entry.cardNumber);
-          const existing = b.cards[numStr];
-          if (!existing) return b;
-          return { ...b, cards: withQuantity(b.cards, numStr, existing.quantity - entry.qty) };
+          if (!b.cards[numStr]) return b;
+          return { ...b, cards: changeCopies(b.cards, numStr, -entry.qty, entry.foil) };
         }),
         addHistory,
       };
@@ -210,20 +200,21 @@ export const useBinders = () => {
     return entry;
   }, []);
 
-  /** Fetches missing Lorcana images for the given card numbers. */
-  const hydrateImages = useCallback(async (binderId, cardNumbers) => {
-    const binder = stateRef.current.binders.find((b) => b.id === binderId);
-    if (!binder || binder.gameType !== 'lorcana' || !binder.setCode) return;
-    const missing = cardNumbers.filter((n) => binder.cards[String(n)] && !binder.cards[String(n)].imageUrl);
+  /**
+   * Fetches missing Lorcana images for the given card numbers. The caller passes the set it is
+   * rendering: stateRef is only synced after render, so it can still miss a card just added.
+   */
+  const hydrateImages = useCallback(async (binderId, setCode, cardNumbers) => {
+    if (!setCode) return;
     await Promise.all(
-      missing.map(async (cardNumber) => {
-        const imageUrl = await fetchLorcastCard(binder.setCode, cardNumber);
+      cardNumbers.map(async (cardNumber) => {
+        const imageUrl = await fetchLorcastCard(setCode, cardNumber);
         if (!imageUrl) return;
         setState((prev) =>
           mapBinder(prev, binderId, (b) => {
             const numStr = String(cardNumber);
             const card = b.cards[numStr];
-            if (!card || card.imageUrl || b.setCode !== binder.setCode) return b;
+            if (!card || card.imageUrl || b.gameType !== 'lorcana' || b.setCode !== setCode) return b;
             return { ...b, cards: { ...b.cards, [numStr]: { ...card, imageUrl } } };
           })
         );
@@ -237,7 +228,10 @@ export const useBinders = () => {
       mapBinder(prev, binderId, (b) => ({
         ...b,
         cards: Object.fromEntries(
-          Object.entries(b.cards).map(([num, data]) => [num, { ...data, exportedQuantity: data.quantity }])
+          Object.entries(b.cards).map(([num, data]) => [
+            num,
+            { ...data, exportedQuantity: data.quantity, exportedFoil: data.foil ?? 0 },
+          ])
         ),
       }))
     );
@@ -249,7 +243,7 @@ export const useBinders = () => {
       mapBinder(prev, binderId, (b) => ({
         ...b,
         cards: Object.fromEntries(
-          Object.entries(b.cards).map(([num, data]) => [num, { ...data, exportedQuantity: 0 }])
+          Object.entries(b.cards).map(([num, data]) => [num, { ...data, exportedQuantity: 0, exportedFoil: 0 }])
         ),
       }))
     );
@@ -278,7 +272,7 @@ export const useBinders = () => {
     duplicateBinder,
     setActiveBinder,
     addCards,
-    setCardQuantity,
+    setCardCounts,
     removeCard,
     removeLastAdded,
     hydrateImages,

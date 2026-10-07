@@ -28,7 +28,7 @@ const BinderHeader = ({
   onResetExports,
 }) => {
   const game = getGame(binder.gameType);
-  const { unique, copies, owned, progress } = getBinderStats(binder);
+  const { unique, copies, foils, owned, progress } = getBinderStats(binder);
   const setName = binder.gameType === 'lorcana' ? getLorcanaSetName(binder.setCode) : null;
 
   return (
@@ -124,6 +124,7 @@ const BinderHeader = ({
         <div className="flex items-center gap-x-5 gap-y-2 mt-3 flex-wrap">
           <StatChip value={unique} label={`carte${unique !== 1 ? 's' : ''} unique${unique !== 1 ? 's' : ''}`} />
           <StatChip value={copies} label={`exemplaire${copies !== 1 ? 's' : ''}`} />
+          {foils > 0 && <StatChip value={foils} label={<span className="foil-text font-semibold">foil{foils !== 1 ? 's' : ''}</span>} />}
           {progress !== null && (
             <div className="flex items-center gap-2.5 flex-1 min-w-[180px] max-w-xs">
               <ProgressBar value={progress} className="flex-1 h-1.5" />

@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { motion, MotionConfig } from 'motion/react';
 import { Library, Menu as MenuIcon, Hash, MousePointerClick, Download } from 'lucide-react';
 import { useBinders } from './hooks/useBinders';
+import { useLorcanaSets } from './hooks/useLorcanaSets';
 import Sidebar from './components/Sidebar/Sidebar';
 import BinderView from './components/BinderView/BinderView';
 import BinderFormModal from './components/Modals/BinderFormModal';
@@ -81,6 +82,7 @@ const Welcome = ({ onCreate, onOpenSidebar }) => (
 
 const AppContent = () => {
   const notify = useToast();
+  useLorcanaSets(); // refresh the chapter list in the background
   const [formState, setFormState] = useState({ open: false, binder: null });
   const [pendingDelete, setPendingDelete] = useState(null);
   const [pendingImport, setPendingImport] = useState(null);
@@ -99,7 +101,7 @@ const AppContent = () => {
     duplicateBinder,
     setActiveBinder,
     addCards,
-    setCardQuantity,
+    setCardCounts,
     removeCard,
     removeLastAdded,
     hydrateImages,
@@ -197,7 +199,7 @@ const AppContent = () => {
             onSetPref={setPref}
             onAddCards={addCards}
             onRemoveCard={removeCard}
-            onSetQuantity={setCardQuantity}
+            onSetCounts={setCardCounts}
             onRemoveLastAdded={removeLastAdded}
             onHydrateImages={hydrateImages}
             onBulkMarkExported={bulkMarkExported}

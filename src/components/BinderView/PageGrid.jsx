@@ -15,7 +15,7 @@ const pocketVariants = {
 };
 
 /** One physical page of the binder (a sleeve sheet side). */
-const PageGrid = ({ binder, page, highlight, celebrate, onOpenCard, onStepCard, compact }) => {
+const PageGrid = ({ binder, page, highlight, celebrate, lastAddedCard, onOpenCard, onStepCard, compact }) => {
   const { gridRows, gridCols, cards, gameType, setSize } = binder;
   const pockets = gridRows * gridCols;
   const cardNumbers = getCardsOnPage(page, pockets);
@@ -67,6 +67,7 @@ const PageGrid = ({ binder, page, highlight, celebrate, onOpenCard, onStepCard, 
                   cardNumber={num}
                   cardData={cards[String(num)]}
                   isHighlighted={highlight?.cardNumber === num}
+                  isLastAdded={lastAddedCard === num}
                   pulse={highlight?.cardNumber === num ? highlight : null}
                   pocketStyle={pocketStyle}
                   outOfSet={Boolean(setSize && num > setSize)}

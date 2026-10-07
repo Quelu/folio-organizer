@@ -1,16 +1,23 @@
+import { getCounts, getExportedCounts } from './cards';
+
 /**
- * Generates the rows to export to Dreamborn (only non-exported quantities).
+ * Generates the rows to export to Dreamborn (only non-exported quantities), one per variant.
  * @param {object} binder
- * @returns {{ cardNumber: number, toExport: number }[]}
+ * @returns {{ cardNumber: number, variant: 'normal'|'foil', toExport: number }[]}
  */
 export const getDreambornExportRows = (binder) =>
   Object.entries(binder.cards)
-    .map(([num, data]) => ({
-      cardNumber: parseInt(num, 10),
-      toExport: data.quantity - (data.exportedQuantity ?? 0),
-    }))
+    .flatMap(([num, data]) => {
+      const owned = getCounts(data);
+      const exported = getExportedCounts(data);
+      return ['normal', 'foil'].map((variant) => ({
+        cardNumber: parseInt(num, 10),
+        variant,
+        toExport: owned[variant] - exported[variant],
+      }));
+    })
     .filter((r) => r.toExport > 0)
-    .sort((a, b) => a.cardNumber - b.cardNumber);
+    .sort((a, b) => a.cardNumber - b.cardNumber || a.variant.localeCompare(b.variant));
 
 /**
  * Builds the CSV string in Dreamborn format.
@@ -21,7 +28,7 @@ export const generateDreambornCsv = (binder) => {
   const rows = getDreambornExportRows(binder);
   const lines = ['Set Number,Card Number,Variant,Count'];
   for (const row of rows) {
-    lines.push(`${binder.setCode},${row.cardNumber},normal,${row.toExport}`);
+    lines.push(`${binder.setCode},${row.cardNumber},${row.variant},${row.toExport}`);
   }
   return lines.join('\n');
 };

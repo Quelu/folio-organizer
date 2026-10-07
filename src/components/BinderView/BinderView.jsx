@@ -4,7 +4,6 @@ import { ChevronsLeft, ChevronsRight } from 'lucide-react';
 import {
   getPockets,
   getPage,
-  getSheet,
   getSpread,
   getSpreadPages,
   getCardsOnPage,
@@ -26,7 +25,7 @@ const BinderView = ({
   onSetPref,
   onAddCards,
   onRemoveCard,
-  onSetQuantity,
+  onSetCounts,
   onRemoveLastAdded,
   onHydrateImages,
   onBulkMarkExported,
@@ -41,7 +40,7 @@ const BinderView = ({
   const [direction, setDirection] = useState(1);
   const [highlight, setHighlight] = useState(null); // { cardNumber, token, kind: 'add'|'remove'|'locate' }
   const [celebrate, setCelebrate] = useState(null); // { page, token }
-  const [pageHint, setPageHint] = useState(null); // { sheets, forward, toSheet }
+  const [pageHint, setPageHint] = useState(null); // { turns, forward, page, left, right }
   const [lastAction, setLastAction] = useState(null);
   const [detailCard, setDetailCard] = useState(null);
   const highlightTimerRef = useRef(null);
@@ -78,8 +77,10 @@ const BinderView = ({
     .filter((n) => binder.cards[String(n)] && !binder.cards[String(n)].imageUrl);
   const missingKey = missingImages.join(',');
   useEffect(() => {
-    if (missingKey) onHydrateImages(binder.id, missingKey.split(',').map(Number));
-  }, [missingKey, binder.id, binder.setCode, onHydrateImages]);
+    if (missingKey && binder.gameType === 'lorcana') {
+      onHydrateImages(binder.id, binder.setCode, missingKey.split(',').map(Number));
+    }
+  }, [missingKey, binder.id, binder.gameType, binder.setCode, onHydrateImages]);
 
   const navigateTo = useCallback(
     (newPage) => {
@@ -121,10 +122,13 @@ const BinderView = ({
       const forward = page >= currentPage;
       setDirection(forward ? 1 : -1);
 
-      const sheets = Math.abs(getSheet(page) - getSheet(currentPage));
+      // An open binder shows a spread (verso of a sheet + recto of the next one): every sheet
+      // turned moves exactly one spread, whatever the view mode used on screen.
+      const turns = Math.abs(getSpread(page) - getSpread(currentPage));
+      const [left, right] = getSpreadPages(getSpread(page));
       clearTimeout(hintTimerRef.current);
-      if (sheets > 0) {
-        setPageHint({ sheets, forward, toSheet: getSheet(page) });
+      if (turns > 0) {
+        setPageHint({ turns, forward, page, left, right });
         hintTimerRef.current = setTimeout(() => setPageHint(null), 4000);
       } else {
         setPageHint(null);
@@ -173,7 +177,7 @@ const BinderView = ({
       focusCard(last.cardNumber, 'add');
       setLastAction(
         entries.length === 1
-          ? { id: tokenRef.current, type: 'add', cardNumber: last.cardNumber }
+          ? { id: tokenRef.current, type: 'add', cardNumber: last.cardNumber, foil: last.foil }
           : { id: tokenRef.current, type: 'batch', count: entries.length }
       );
     },
@@ -189,8 +193,8 @@ const BinderView = ({
   );
 
   const handleDecrement = useCallback(
-    (cardNumber) => {
-      onRemoveCard(binder.id, cardNumber);
+    (cardNumber, foil) => {
+      onRemoveCard(binder.id, cardNumber, foil);
       focusCard(cardNumber, 'remove');
     },
     [binder.id, onRemoveCard, focusCard]
@@ -200,7 +204,7 @@ const BinderView = ({
     const entry = onRemoveLastAdded(binder.id);
     if (!entry) return;
     focusCard(entry.cardNumber, 'remove');
-    setLastAction({ id: tokenRef.current, type: 'undo', cardNumber: entry.cardNumber, qty: entry.qty });
+    setLastAction({ id: tokenRef.current, type: 'undo', cardNumber: entry.cardNumber, qty: entry.qty, foil: entry.foil });
   }, [binder.id, onRemoveLastAdded, focusCard]);
 
   const handleStepCard = useCallback(
@@ -226,9 +230,9 @@ const BinderView = ({
     [pockets, currentPage, navigateTo]
   );
 
-  const handleSetQuantity = useCallback(
-    (cardNumber, qty) => onSetQuantity(binder.id, cardNumber, Math.max(0, qty)),
-    [binder.id, onSetQuantity]
+  const handleSetCounts = useCallback(
+    (cardNumber, counts) => onSetCounts(binder.id, cardNumber, counts),
+    [binder.id, onSetCounts]
   );
 
   const closeDetail = useCallback(() => {
@@ -256,6 +260,8 @@ const BinderView = ({
     .map((h, seq) => ({ ...h, seq }))
     .slice(-10)
     .reverse();
+  // Most recent addition still in the binder, framed on its page so it is easy to spot
+  const lastAddedCard = recent.find((r) => binder.cards[String(r.cardNumber)])?.cardNumber ?? null;
 
   // Size the pages from the available height so a whole page (or spread) fits on screen
   const pageRatio = (binder.gridCols * 5) / (binder.gridRows * 7);
@@ -321,14 +327,22 @@ const BinderView = ({
                     <ChevronsLeft size={22} className="flex-shrink-0" />
                   )}
                   <span className="text-sm font-medium leading-snug">
-                    {pageHint.forward ? 'Tourne' : 'Reviens'}{' '}
+                    Tourne{' '}
                     <b className="font-extrabold">
-                      {pageHint.sheets} feuille{pageHint.sheets > 1 ? 's' : ''}
+                      {pageHint.turns} page{pageHint.turns > 1 ? 's' : ''}
                     </b>{' '}
-                    {pageHint.forward ? "vers l'avant" : 'en arrière'} → feuille <b className="font-extrabold">{pageHint.toSheet}</b>
-                    <span className="opacity-60 text-xs ml-1.5">
-                      (p.{pageHint.toSheet * 2 - 1}–{pageHint.toSheet * 2})
-                    </span>
+                    {pageHint.forward ? 'vers la droite' : 'vers la gauche'}
+                    <span className="opacity-50"> · </span>
+                    {pageHint.left ? (
+                      <>
+                        pages {pageHint.left}–{pageHint.right}, carte sur la{' '}
+                        <b className="font-extrabold">{pageHint.page === pageHint.left ? 'gauche' : 'droite'}</b>
+                      </>
+                    ) : (
+                      <>
+                        <b className="font-extrabold">page 1</b> (première page)
+                      </>
+                    )}
                   </span>
                 </motion.div>
               )}
@@ -342,6 +356,7 @@ const BinderView = ({
             direction={direction}
             highlight={highlight}
             celebrate={celebrate}
+            lastAddedCard={lastAddedCard}
             onOpenCard={setDetailCard}
             onStepCard={handleStepCard}
           />
@@ -370,7 +385,7 @@ const BinderView = ({
         cardNumber={detailCard}
         onClose={closeDetail}
         onNavigate={handleDetailNavigate}
-        onSetQuantity={handleSetQuantity}
+        onSetCounts={handleSetCounts}
       />
     </div>
   );

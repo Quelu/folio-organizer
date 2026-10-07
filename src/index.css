@@ -134,9 +134,88 @@
   }
 }
 
+@layer components {
+  /* Last added card frame */
+  .last-frame-gradient {
+    background: conic-gradient(from 0deg, #f472b6, #a78bfa, #818cf8, #38bdf8, #34d399, #fbbf24, #f472b6);
+  }
+  .animate-spin-slow {
+    animation: frame-spin 3.2s linear infinite;
+  }
+  @keyframes frame-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes twinkle {
+    0%,
+    100% {
+      transform: scale(0.4) rotate(0deg);
+      opacity: 0.2;
+    }
+    50% {
+      transform: scale(1.1) rotate(90deg);
+      opacity: 1;
+    }
+  }
+  .animate-twinkle {
+    animation: twinkle 1.6s ease-in-out infinite;
+  }
+}
+
+@layer components {
+  /* Foil cards and controls */
+  .foil-surface {
+    background: linear-gradient(120deg, #ec4899, #a855f7, #6366f1, #06b6d4, #10b981, #eab308, #ec4899);
+    background-size: 300% 100%;
+    animation: foil-pan 4s linear infinite;
+  }
+  .foil-text {
+    background: linear-gradient(90deg, #f0abfc, #a5b4fc, #67e8f9, #fde68a, #f0abfc);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: foil-pan 3s linear infinite;
+  }
+  .foil-sheen {
+    background: linear-gradient(
+      125deg,
+      transparent 15%,
+      rgb(255 0 170 / 0.28) 30%,
+      rgb(0 255 230 / 0.28) 42%,
+      rgb(255 230 0 / 0.24) 54%,
+      rgb(170 0 255 / 0.24) 66%,
+      transparent 82%
+    );
+    background-size: 300% 300%;
+    animation: foil-sweep 5s ease-in-out infinite;
+  }
+  @keyframes foil-pan {
+    to {
+      background-position: 300% 0;
+    }
+  }
+  @keyframes foil-sweep {
+    0%,
+    100% {
+      background-position: 0% 0%;
+    }
+    50% {
+      background-position: 100% 100%;
+    }
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .foil-surface,
+  .foil-text,
+  .foil-sheen,
   .shimmer::after,
-  .animate-float {
+  .animate-float,
+  .animate-spin-slow,
+  .animate-twinkle {
     animation: none;
   }
 }

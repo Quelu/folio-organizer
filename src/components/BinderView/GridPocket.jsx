@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence, useAnimate } from 'motion/react';
-import { Check, Plus, Minus } from 'lucide-react';
+import { Check, Plus, Minus, Sparkles } from 'lucide-react';
 import TiltCard from '../ui/TiltCard';
 
 /** Card image with its own fade-in state (keyed by URL from the parent). */
@@ -50,12 +50,77 @@ const Ripple = ({ kind }) => {
   );
 };
 
-const GridPocket = ({ cardNumber, cardData, pulse, isHighlighted, pocketStyle, outOfSet, onOpen, onStep, compact }) => {
+/** Spinning rainbow frame and glow behind the last card added (the card hides the center). */
+const LastAddedRing = () => (
+  <motion.div
+    aria-hidden
+    className="pointer-events-none absolute -inset-[3px] z-0"
+    initial={{ opacity: 0, scale: 1.18 }}
+    animate={{ opacity: 1, scale: 1 }}
+    exit={{ opacity: 0, scale: 1.1 }}
+    transition={{ type: 'spring', stiffness: 260, damping: 18, delay: 0.25 }}
+  >
+    <div className="absolute -inset-1 rounded-xl overflow-hidden blur-md opacity-70">
+      <span className="last-frame-gradient absolute -inset-[60%] animate-spin-slow" />
+    </div>
+    <div className="absolute inset-0 rounded-[10px] overflow-hidden">
+      <span className="last-frame-gradient absolute -inset-[60%] animate-spin-slow" />
+    </div>
+  </motion.div>
+);
+
+/** Twinkling stars and a "Dernière" tag drawn above the last card added. */
+const LastAddedTag = ({ compact }) => (
+  <motion.div
+    aria-hidden
+    className="pointer-events-none absolute -inset-[3px] z-20"
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    exit={{ opacity: 0 }}
+    transition={{ delay: 0.3 }}
+  >
+    {['top-0 left-0 -translate-x-1/2 -translate-y-1/2', 'bottom-0 right-0 translate-x-1/2 translate-y-1/2'].map(
+      (pos, i) => (
+        <span key={pos} className={`absolute ${pos}`}>
+          <Sparkles
+            size={compact ? 13 : 16}
+            className="animate-twinkle text-amber-200 drop-shadow-[0_0_6px_rgba(253,230,138,0.9)]"
+            style={{ animationDelay: `${i * 0.8}s` }}
+          />
+        </span>
+      )
+    )}
+    <div className="absolute left-1/2 -top-2.5 -translate-x-1/2">
+      <motion.span
+        initial={{ y: -8, scale: 0.6, opacity: 0 }}
+        animate={{ y: 0, scale: 1, opacity: 1 }}
+        transition={{ type: 'spring', stiffness: 500, damping: 16, delay: 0.4 }}
+        className="flex items-center gap-0.5 whitespace-nowrap rounded-full bg-gradient-to-r from-fuchsia-500 via-violet-500 to-indigo-500 px-1.5 py-[1px] text-[9px] font-bold uppercase tracking-wider text-white shadow-lg shadow-violet-900/60 ring-1 ring-white/30"
+      >
+        <Sparkles size={9} /> Dernière
+      </motion.span>
+    </div>
+  </motion.div>
+);
+
+const GridPocket = ({
+  cardNumber,
+  cardData,
+  pulse,
+  isHighlighted,
+  isLastAdded,
+  pocketStyle,
+  outOfSet,
+  onOpen,
+  onStep,
+  compact,
+}) => {
   const [scope, animate] = useAnimate();
 
   const quantity = cardData?.quantity ?? 0;
   const exportedQuantity = cardData?.exportedQuantity ?? 0;
   const imageUrl = cardData?.imageUrl ?? null;
+  const foil = cardData?.foil ?? 0;
   const hasCard = quantity > 0;
   const fullyExported = hasCard && exportedQuantity >= quantity;
   const partiallyExported = hasCard && exportedQuantity > 0 && exportedQuantity < quantity;
@@ -84,9 +149,13 @@ const GridPocket = ({ cardNumber, cardData, pulse, isHighlighted, pocketStyle, o
           onOpen(cardNumber);
         }
       }}
-      aria-label={`Carte ${cardNumber}${hasCard ? `, ${quantity} exemplaire${quantity > 1 ? 's' : ''}` : ', vide'}`}
-      className={`group relative cursor-pointer outline-none ${isHighlighted ? 'z-10' : 'hover:z-10'}`}
+      aria-label={`Carte ${cardNumber}${
+        hasCard ? `, ${quantity} exemplaire${quantity > 1 ? 's' : ''}${foil ? ` dont ${foil} foil` : ''}` : ', vide'
+      }`}
+      className={`group relative cursor-pointer outline-none ${isHighlighted || isLastAdded ? 'z-10' : 'hover:z-10'}`}
     >
+      <AnimatePresence>{isLastAdded && hasCard && <LastAddedRing key="ring" />}</AnimatePresence>
+
       <TiltCard
         disabled={!hasCard}
         max={compact ? 10 : 14}
@@ -134,11 +203,41 @@ const GridPocket = ({ cardNumber, cardData, pulse, isHighlighted, pocketStyle, o
                   </span>
                 </div>
               )}
+              {/* Permanent holographic sheen on foils */}
+              <AnimatePresence>
+                {foil > 0 && (
+                  <motion.div
+                    key="foil"
+                    aria-hidden
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="foil-sheen pointer-events-none absolute inset-0 z-[4] mix-blend-color-dodge"
+                  />
+                )}
+              </AnimatePresence>
               {imageUrl && (
                 <span className="absolute bottom-1 right-1 px-1 rounded bg-black/60 text-[10px] font-semibold text-white/80 tabular-nums z-10">
                   {cardNumber}
                 </span>
               )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {foil > 0 && (
+            <motion.div
+              key="foil-badge"
+              initial={{ scale: 0, rotate: -120 }}
+              animate={{ scale: 1, rotate: 0 }}
+              exit={{ scale: 0 }}
+              transition={{ type: 'spring', stiffness: 450, damping: 16 }}
+              className="foil-surface absolute top-1 left-1 z-10 flex items-center gap-0.5 h-[18px] min-w-[18px] px-1 rounded-full text-[9px] font-bold text-white shadow-lg shadow-fuchsia-900/50 ring-1 ring-white/40"
+              title={`${foil} foil${foil > 1 ? 's' : ''}`}
+            >
+              <Sparkles size={10} />
+              {(foil > 1 || foil < quantity) && <span className="tabular-nums">{foil}</span>}
             </motion.div>
           )}
         </AnimatePresence>
@@ -222,6 +321,8 @@ const GridPocket = ({ cardNumber, cardData, pulse, isHighlighted, pocketStyle, o
           </button>
         </div>
       </TiltCard>
+
+      <AnimatePresence>{isLastAdded && hasCard && <LastAddedTag key="tag" compact={compact} />}</AnimatePresence>
 
       {pulse && <Ripple key={pulse.token} kind={pulse.kind} />}
     </div>
