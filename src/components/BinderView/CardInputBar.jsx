@@ -1,126 +1,296 @@
-import { useRef, useCallback, useEffect } from 'react';
-import { Hash, Plus, Minus } from 'lucide-react';
-import { useKeyboardInput } from '../../hooks/useKeyboardInput';
+import { useState, useEffect } from 'react';
+import { Hash, Plus, Minus, LocateFixed, Undo2, CheckCircle2, MapPin, History } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { parseCardInput, getLocation } from '../../utils/calculations';
 
-const GAME_BADGE = {
-  lorcana: { label: 'Lorcana', className: 'bg-blue-600/30 text-blue-300 border border-blue-500/30' },
-  pokemon: { label: 'Pokémon', className: 'bg-yellow-600/30 text-yellow-300 border border-yellow-500/30' },
-  magic: { label: 'Magic', className: 'bg-purple-600/30 text-purple-300 border border-purple-500/30' },
-  other: { label: 'Autre', className: 'bg-gray-700/50 text-gray-300 border border-gray-600/30' },
+const LocationText = ({ loc }) => (
+  <>
+    Page <b className="text-white">{loc.page}</b>
+    <span className="text-slate-600"> · </span>
+    rangée <b className="text-white">{loc.row}</b>, col. <b className="text-white">{loc.col}</b>
+    <span className="text-slate-600"> · </span>
+    feuille {loc.sheet} {loc.side}
+  </>
+);
+
+/** Live feedback line under the input: preview while typing, last action otherwise. */
+const StatusLine = ({ binder, value, parsed, lastAction }) => {
+  if (value.trim()) {
+    if (!parsed) {
+      return (
+        <span className="text-rose-300/90">
+          Format attendu : <code>12</code>, <code>12x3</code> ou une liste <code>4 8 15x2</code>
+        </span>
+      );
+    }
+    if (parsed.length === 1) {
+      const { cardNumber, qty } = parsed[0];
+      const owned = binder.cards[String(cardNumber)]?.quantity ?? 0;
+      return (
+        <span className="text-slate-400 flex items-center gap-1.5">
+          <MapPin size={13} className="text-indigo-300 flex-shrink-0" />
+          <span>
+            <LocationText loc={getLocation(cardNumber, binder)} />
+            <span className="text-slate-600"> · </span>
+            {owned > 0 ? (
+              <span className="text-amber-300">déjà ×{owned}</span>
+            ) : (
+              <span className="text-emerald-300">nouvelle carte</span>
+            )}
+            {qty > 1 && <span className="text-slate-500"> (+{qty})</span>}
+          </span>
+        </span>
+      );
+    }
+    const copies = parsed.reduce((s, e) => s + e.qty, 0);
+    return (
+      <span className="text-slate-400">
+        <b className="text-white">{parsed.length}</b> cartes · <b className="text-white">{copies}</b> exemplaires
+        à ajouter
+      </span>
+    );
+  }
+
+  if (lastAction) {
+    return (
+      <AnimatePresence mode="wait">
+        <motion.span
+          key={lastAction.id}
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-slate-400 flex items-center gap-1.5"
+        >
+          {lastAction.type === 'undo' ? (
+            <>
+              <Undo2 size={13} className="text-amber-300 flex-shrink-0" />
+              <span>
+                Annulé : #{lastAction.cardNumber}
+                {lastAction.qty > 1 && ` ×${lastAction.qty}`}
+              </span>
+            </>
+          ) : lastAction.type === 'batch' ? (
+            <>
+              <CheckCircle2 size={13} className="text-emerald-400 flex-shrink-0" />
+              <span>{lastAction.count} cartes ajoutées</span>
+            </>
+          ) : (
+            <>
+              {lastAction.type === 'locate' ? (
+                <LocateFixed size={13} className="text-indigo-300 flex-shrink-0" />
+              ) : (
+                <CheckCircle2 size={13} className="text-emerald-400 flex-shrink-0" />
+              )}
+              <span>
+                <b className="text-white">#{lastAction.cardNumber}</b>
+                {lastAction.type === 'add' ? ' ajoutée → ' : ' se trouve '}
+                <LocationText loc={getLocation(lastAction.cardNumber, binder)} />
+                {lastAction.type === 'add' && (
+                  <span className="text-slate-500">
+                    {' '}
+                    (×{binder.cards[String(lastAction.cardNumber)]?.quantity ?? 0} au total)
+                  </span>
+                )}
+              </span>
+            </>
+          )}
+        </motion.span>
+      </AnimatePresence>
+    );
+  }
+
+  return <span className="text-slate-600">Tape un numéro de carte pour voir où la ranger.</span>;
 };
 
-const CardInputBar = ({ binder, onAdd, onIncrement, onDecrement, onRemoveLast }) => {
-  const inputRef = useRef(null);
-  const badge = GAME_BADGE[binder.gameType] ?? GAME_BADGE.other;
+const CardInputBar = ({
+  inputRef,
+  binder,
+  recent,
+  lastAction,
+  onAdd,
+  onLocate,
+  onDecrement,
+  onUndo,
+  onPageStep,
+  canUndo,
+}) => {
+  const [value, setValue] = useState('');
+  const parsed = value.trim() ? parseCardInput(value) : null;
+  const single = parsed?.length === 1 ? parsed[0] : null;
 
   // Re-focus input when binder changes
   useEffect(() => {
     inputRef.current?.focus();
-  }, [binder.id]);
+  }, [binder.id, inputRef]);
 
-  const handleAdd = useCallback(
-    (num) => {
-      onAdd(num);
-      if (inputRef.current) inputRef.current.value = '';
-      inputRef.current?.focus();
-    },
-    [onAdd]
-  );
+  const refocus = () => inputRef.current?.focus();
 
-  const handleIncrement = useCallback(
-    (num) => {
-      onIncrement(num);
-      inputRef.current?.focus();
-    },
-    [onIncrement]
-  );
-
-  const handleDecrement = useCallback(
-    (num) => {
-      onDecrement(num);
-      inputRef.current?.focus();
-    },
-    [onDecrement]
-  );
-
-  const handleRemoveLast = useCallback(() => {
-    onRemoveLast();
-    inputRef.current?.focus();
-  }, [onRemoveLast]);
-
-  useKeyboardInput(inputRef, {
-    onAdd: handleAdd,
-    onIncrement: handleIncrement,
-    onDecrement: handleDecrement,
-    onRemoveLast: handleRemoveLast,
-  });
-
-  const clickAdd = () => {
-    const val = parseInt(inputRef.current?.value, 10);
-    if (!isNaN(val) && val > 0) handleAdd(val);
+  const submit = () => {
+    if (!parsed) return;
+    onAdd(parsed);
+    setValue('');
+    refocus();
   };
 
-  const clickIncrement = () => {
-    const val = parseInt(inputRef.current?.value, 10);
-    if (!isNaN(val) && val > 0) handleIncrement(val);
+  const locate = () => {
+    if (!single) return;
+    onLocate(single.cardNumber);
+    refocus();
   };
 
-  const clickDecrement = () => {
-    const val = parseInt(inputRef.current?.value, 10);
-    if (!isNaN(val) && val > 0) handleDecrement(val);
+  const step = (delta) => {
+    if (!single) return;
+    if (delta > 0) onAdd([{ cardNumber: single.cardNumber, qty: 1 }]);
+    else onDecrement(single.cardNumber);
+    refocus();
+  };
+
+  const handleKeyDown = (e) => {
+    const isEmpty = value === '';
+    switch (e.key) {
+      case 'Enter':
+        e.preventDefault();
+        if (e.shiftKey) locate();
+        else submit();
+        break;
+      case '+':
+        e.preventDefault();
+        step(1);
+        break;
+      case '-':
+        e.preventDefault();
+        step(-1);
+        break;
+      case 'Escape':
+        setValue('');
+        break;
+      case 'Backspace':
+        if (isEmpty) {
+          e.preventDefault();
+          onUndo();
+        }
+        break;
+      case 'ArrowLeft':
+      case 'ArrowRight':
+        if (isEmpty) {
+          e.preventDefault();
+          onPageStep(e.key === 'ArrowRight' ? 1 : -1);
+        }
+        break;
+    }
   };
 
   return (
-    <div className="bg-gray-900/80 backdrop-blur border-b border-gray-800 p-4">
-      <div className="flex items-center gap-3 max-w-2xl mx-auto">
-        {/* Game type badge */}
-        <span className={`px-2.5 py-1 rounded-md text-xs font-semibold whitespace-nowrap ${badge.className}`}>
-          {badge.label}
-        </span>
+    <div className="border-b border-white/5 bg-slate-950/40 backdrop-blur px-4 sm:px-6 py-4">
+      <div className="max-w-5xl mx-auto">
+        <div className="flex items-center gap-2">
+          <div className="flex-1 relative">
+            <Hash size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+            <input
+              ref={inputRef}
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="N° de carte… (ex : 42, 42x2, 3 17 88)"
+              autoFocus
+              aria-label="Numéro de carte"
+              className={`field text-base pl-10 py-3 ${parsed === null && value.trim() ? 'ring-rose-400/60' : ''}`}
+            />
+          </div>
 
-        {/* Number input */}
-        <div className="flex-1 relative">
-          <Hash size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-          <input
-            ref={inputRef}
-            type="number"
-            min="1"
-            placeholder="N° de carte..."
-            autoFocus
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-8 pr-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none text-sm"
-          />
+          <button
+            onClick={() => step(-1)}
+            disabled={!single}
+            title="Retirer un exemplaire (touche −)"
+            aria-label="Retirer un exemplaire"
+            className="btn-secondary px-3 py-3"
+          >
+            <Minus size={16} />
+          </button>
+          <button
+            onClick={locate}
+            disabled={!single}
+            title="Localiser sans ajouter (Maj + Entrée)"
+            aria-label="Localiser la carte"
+            className="btn-secondary px-3 py-3 hidden sm:inline-flex"
+          >
+            <LocateFixed size={16} />
+          </button>
+          <button
+            onClick={submit}
+            disabled={!parsed}
+            title="Ajouter (Entrée)"
+            className="btn-primary px-4 py-3"
+          >
+            <Plus size={16} />
+            <span className="hidden sm:inline">Ajouter</span>
+          </button>
         </div>
 
-        {/* − button */}
-        <button
-          onClick={clickDecrement}
-          title="Diminuer la quantité (ou touche -)"
-          className="p-2.5 bg-gray-800 hover:bg-gray-700 rounded-lg text-gray-400 hover:text-white border border-gray-700 transition-colors flex-shrink-0"
-        >
-          <Minus size={16} />
-        </button>
+        <div className="mt-2.5 min-h-[20px] flex items-center justify-between gap-4 text-xs">
+          <StatusLine binder={binder} value={value} parsed={parsed} lastAction={lastAction} />
+          {canUndo && !value && (
+            <button
+              onClick={() => {
+                onUndo();
+                refocus();
+              }}
+              className="flex-shrink-0 flex items-center gap-1 text-slate-500 hover:text-white transition-colors"
+              title="Annuler le dernier ajout (⌫ quand le champ est vide)"
+            >
+              <Undo2 size={13} /> Annuler
+            </button>
+          )}
+        </div>
 
-        {/* + / Add button */}
-        <button
-          onClick={clickAdd}
-          title="Ajouter la carte (ou touche Entrée)"
-          className="p-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-white border border-indigo-500/50 transition-colors flex-shrink-0"
-        >
-          <Plus size={16} />
-        </button>
-      </div>
-
-      {/* Keyboard hints */}
-      <div className="flex gap-4 mt-2 max-w-2xl mx-auto">
-        <span className="text-xs text-gray-600">
-          <kbd className="text-gray-500">↵</kbd> Ajouter
-        </span>
-        <span className="text-xs text-gray-600">
-          <kbd className="text-gray-500">+</kbd><kbd className="text-gray-500">-</kbd> Quantité
-        </span>
-        <span className="text-xs text-gray-600">
-          <kbd className="text-gray-500">⌫</kbd> Annuler dernier
-        </span>
+        <div className="mt-3 flex items-center gap-3 overflow-hidden">
+          {recent.length > 0 ? (
+            <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto scrollbar-thin pb-0.5">
+              <History size={13} className="text-slate-600 flex-shrink-0" />
+              {recent.map((r, i) => (
+                <button
+                  key={`${r.cardNumber}-${r.at ?? i}-${i}`}
+                  onClick={() => {
+                    onLocate(r.cardNumber);
+                    refocus();
+                  }}
+                  className={`flex-shrink-0 px-2 py-0.5 rounded-md text-[11px] font-medium tabular-nums ring-1 ring-inset transition-colors ${
+                    i === 0
+                      ? 'bg-indigo-500/15 text-indigo-200 ring-indigo-400/30'
+                      : 'bg-white/[0.03] text-slate-400 ring-white/10 hover:text-white'
+                  }`}
+                  title={`Localiser la carte #${r.cardNumber}`}
+                >
+                  #{r.cardNumber}
+                  {r.qty > 1 && <span className="opacity-60"> ×{r.qty}</span>}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div />
+          )}
+          <div className="hidden md:flex items-center gap-3 ml-auto flex-shrink-0 text-[11px] text-slate-500">
+            <span>
+              <kbd className="kbd">↵</kbd> Ajouter
+            </span>
+            <span>
+              <kbd className="kbd">⇧↵</kbd> Localiser
+            </span>
+            <span>
+              <kbd className="kbd">+</kbd>
+              <kbd className="kbd ml-0.5">−</kbd> Quantité
+            </span>
+            <span>
+              <kbd className="kbd">⌫</kbd> Annuler
+            </span>
+            <span>
+              <kbd className="kbd">←</kbd>
+              <kbd className="kbd ml-0.5">→</kbd> Pages
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -1,17 +1,26 @@
 import { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
-import { Check } from 'lucide-react';
+import { motion, useAnimate } from 'motion/react';
+import { Check, Plus, Minus } from 'lucide-react';
 
-const PLACEHOLDER_STYLES = {
-  pokemon: 'from-yellow-900/70 to-yellow-800/40 border-yellow-700/50 text-yellow-300',
-  magic: 'from-purple-900/70 to-purple-800/40 border-purple-700/50 text-purple-300',
-  lorcana: 'from-blue-900/70 to-blue-800/40 border-blue-700/50 text-blue-300',
-  other: 'from-gray-800/70 to-gray-700/40 border-gray-600/50 text-gray-400',
+/** Card image with its own fade-in state (keyed by URL from the parent). */
+const CardImage = ({ src, alt }) => {
+  const [loaded, setLoaded] = useState(false);
+  return (
+    <img
+      src={src}
+      alt={alt}
+      loading="lazy"
+      draggable={false}
+      onLoad={() => setLoaded(true)}
+      className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${
+        loaded ? 'opacity-100' : 'opacity-0'
+      }`}
+    />
+  );
 };
 
-const GridPocket = ({ cardNumber, cardData, isHighlighted, isNewlyAdded, gameType }) => {
-  const [imgLoaded, setImgLoaded] = useState(false);
-  const [animKey, setAnimKey] = useState(0);
+const GridPocket = ({ cardNumber, cardData, pulse, isHighlighted, pocketStyle, outOfSet, onOpen, onStep, compact }) => {
+  const [scope, animate] = useAnimate();
 
   const quantity = cardData?.quantity ?? 0;
   const exportedQuantity = cardData?.exportedQuantity ?? 0;
@@ -20,104 +29,117 @@ const GridPocket = ({ cardNumber, cardData, isHighlighted, isNewlyAdded, gameTyp
   const fullyExported = hasCard && exportedQuantity >= quantity;
   const partiallyExported = hasCard && exportedQuantity > 0 && exportedQuantity < quantity;
 
-  // Reset image load state when URL changes
+  // Pop animation each time the card is added or located
   useEffect(() => {
-    setImgLoaded(false);
-  }, [imageUrl]);
-
-  // Trigger pop animation each time the card is newly added
-  useEffect(() => {
-    if (isNewlyAdded) {
-      setAnimKey((k) => k + 1);
+    if (pulse && scope.current) {
+      animate(scope.current, { scale: [1, 1.1, 1] }, { duration: 0.4, ease: 'easeOut' });
     }
-  }, [isNewlyAdded]);
-
-  const placeholder = PLACEHOLDER_STYLES[gameType] ?? PLACEHOLDER_STYLES.other;
+  }, [pulse, animate, scope]);
 
   return (
-    <motion.div
-      key={animKey}
-      animate={
-        isNewlyAdded && animKey > 0
-          ? {
-              scale: [1, 1.13, 1],
-              boxShadow: [
-                '0 0 0px rgba(139,92,246,0)',
-                '0 0 22px rgba(139,92,246,0.85)',
-                '0 0 0px rgba(139,92,246,0)',
-              ],
-            }
-          : {}
-      }
-      transition={{ duration: 0.38, ease: 'easeOut' }}
-      className={`relative aspect-[2.5/3.5] rounded-lg overflow-hidden border-2 transition-all duration-200 ${
+    <div
+      ref={scope}
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(cardNumber)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen(cardNumber);
+        }
+      }}
+      aria-label={`Carte ${cardNumber}${hasCard ? `, ${quantity} exemplaire${quantity > 1 ? 's' : ''}` : ', vide'}`}
+      className={`group relative aspect-[5/7] rounded-lg overflow-hidden cursor-pointer transition-all duration-200 ${
         isHighlighted
-          ? 'border-indigo-400 ring-2 ring-indigo-500/40 shadow-lg shadow-indigo-500/20'
+          ? 'ring-2 ring-indigo-400 shadow-[0_0_24px_rgba(129,140,248,0.55)] z-10'
           : hasCard
-          ? 'border-gray-600'
-          : 'border-gray-700/50 border-dashed'
+            ? 'ring-1 ring-white/10 hover:ring-white/30 shadow-md shadow-black/40 hover:-translate-y-0.5'
+            : 'ring-1 ring-inset ring-white/[0.06] hover:ring-white/20'
       } ${
-        !imageUrl
-          ? `bg-gradient-to-br ${placeholder}`
-          : 'bg-gray-900'
+        hasCard
+          ? imageUrl
+            ? 'bg-slate-900 pocket-shine'
+            : `bg-gradient-to-br ${pocketStyle} pocket-shine`
+          : 'bg-black/25'
       }`}
     >
-      {/* Lorcana card image */}
-      {imageUrl && (
-        <img
-          src={imageUrl}
-          alt={`Carte ${cardNumber}`}
-          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${
-            imgLoaded ? 'opacity-100' : 'opacity-0'
-          }`}
-          onLoad={() => setImgLoaded(true)}
-        />
-      )}
+      {imageUrl && <CardImage key={imageUrl} src={imageUrl} alt={`Carte ${cardNumber}`} />}
 
-      {/* Placeholder content (shown when no image or while loading) */}
-      {(!imageUrl || !imgLoaded) && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5">
+      {(!imageUrl || !hasCard) && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span
-            className={`font-black text-xl leading-none ${
-              isHighlighted ? 'text-indigo-300' : hasCard ? 'text-gray-200' : 'text-gray-600'
+            className={`font-black leading-none tabular-nums ${compact ? 'text-base' : 'text-xl'} ${
+              isHighlighted ? 'text-indigo-200' : hasCard ? 'text-white/90' : outOfSet ? 'text-slate-800' : 'text-slate-700'
             }`}
           >
             {cardNumber}
           </span>
-          {hasCard && (
-            <span className="text-xs opacity-50">#{cardNumber}</span>
-          )}
         </div>
       )}
 
-      {/* Quantity badge */}
+      {/* Card number tag on images */}
+      {imageUrl && hasCard && (
+        <span className="absolute bottom-1 right-1 px-1 rounded bg-black/60 text-[10px] font-semibold text-white/80 tabular-nums z-10">
+          {cardNumber}
+        </span>
+      )}
+
       {quantity > 1 && (
         <motion.div
-          initial={{ scale: 0, opacity: 0 }}
+          key={quantity}
+          initial={{ scale: 0.4, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          className="absolute top-1 right-1 bg-violet-600 text-white text-xs font-bold rounded-full min-w-[20px] h-5 px-1 flex items-center justify-center leading-none z-10"
+          className="absolute top-1 right-1 bg-indigo-500 text-white text-[11px] font-bold rounded-full min-w-[22px] h-[22px] px-1 flex items-center justify-center leading-none z-10 shadow-lg shadow-black/40 tabular-nums"
         >
           ×{quantity > 99 ? '99+' : quantity}
         </motion.div>
       )}
 
-      {/* Exported badge */}
       {fullyExported && (
-        <div className="absolute bottom-1 left-1 bg-emerald-600/90 text-white rounded-full w-5 h-5 flex items-center justify-center z-10">
+        <div
+          className="absolute bottom-1 left-1 bg-emerald-500/90 text-white rounded-full w-[18px] h-[18px] flex items-center justify-center z-10"
+          title="Exporté vers Dreamborn"
+        >
           <Check size={11} strokeWidth={3} />
         </div>
       )}
       {partiallyExported && (
-        <div className="absolute bottom-1 left-1 bg-amber-600/90 text-white text-[9px] font-bold rounded-full min-w-[20px] h-5 px-1 flex items-center justify-center z-10 leading-none">
+        <div
+          className="absolute bottom-1 left-1 bg-amber-500/90 text-white text-[9px] font-bold rounded-full min-w-[20px] h-[18px] px-1 flex items-center justify-center z-10 leading-none"
+          title={`${exportedQuantity} sur ${quantity} exporté(s)`}
+        >
           {exportedQuantity}/{quantity}
         </div>
       )}
 
-      {/* Active highlight overlay */}
-      {isHighlighted && (
-        <div className="absolute inset-0 bg-indigo-500/10 pointer-events-none" />
-      )}
-    </motion.div>
+      {/* Quick +/- on hover (desktop) */}
+      <div className="absolute inset-x-1 bottom-1 hidden [@media(hover:hover)]:group-hover:flex justify-center gap-1 z-20">
+        {hasCard && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onStep(cardNumber, -1);
+            }}
+            className="w-7 h-7 rounded-md bg-slate-950/85 text-slate-200 hover:bg-rose-500 hover:text-white flex items-center justify-center backdrop-blur transition-colors"
+            aria-label={`Retirer un exemplaire de la carte ${cardNumber}`}
+            title="Retirer un exemplaire"
+          >
+            <Minus size={14} />
+          </button>
+        )}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onStep(cardNumber, 1);
+          }}
+          className="w-7 h-7 rounded-md bg-slate-950/85 text-slate-200 hover:bg-indigo-500 hover:text-white flex items-center justify-center backdrop-blur transition-colors"
+          aria-label={`Ajouter un exemplaire de la carte ${cardNumber}`}
+          title="Ajouter un exemplaire"
+        >
+          <Plus size={14} />
+        </button>
+      </div>
+    </div>
   );
 };
 

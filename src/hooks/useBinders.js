@@ -1,23 +1,60 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { loadState, saveState } from '../utils/storage';
 import { fetchLorcastCard } from '../utils/lorcastApi';
+import { getGame } from '../data/games';
+
+const MAX_HISTORY = 300;
 
 const DEFAULT_STATE = {
   binders: [],
   activeBinderId: null,
   addHistory: [],
+  prefs: { viewMode: 'spread' },
 };
 
+/** Fills in fields added after the first version so older saved states keep working. */
+const migrate = (state) => ({
+  ...DEFAULT_STATE,
+  ...state,
+  prefs: { ...DEFAULT_STATE.prefs, ...state.prefs },
+  binders: (state.binders ?? []).map((b) => ({
+    setSize: getGame(b.gameType).defaultSetSize,
+    createdAt: Date.now(),
+    ...b,
+  })),
+});
+
+/** Applies a quantity change to a card, keeping exportedQuantity consistent. */
+const withQuantity = (cards, numStr, quantity) => {
+  const next = { ...cards };
+  if (quantity <= 0) {
+    delete next[numStr];
+    return next;
+  }
+  const existing = cards[numStr];
+  next[numStr] = {
+    quantity,
+    exportedQuantity: Math.min(existing?.exportedQuantity ?? 0, quantity),
+    imageUrl: existing?.imageUrl ?? null,
+  };
+  return next;
+};
+
+const mapBinder = (prev, binderId, fn) => ({
+  ...prev,
+  binders: prev.binders.map((b) => (b.id === binderId ? fn(b) : b)),
+});
+
 export const useBinders = () => {
-  const [state, setState] = useState(() => loadState() ?? DEFAULT_STATE);
+  const [state, setState] = useState(() => {
+    const saved = loadState();
+    return saved ? migrate(saved) : DEFAULT_STATE;
+  });
 
-  // Keep a ref to current binders for use in async callbacks
-  const bindersRef = useRef(state.binders);
+  // Keep a ref to the current state for async callbacks and synchronous reads
+  const stateRef = useRef(state);
   useEffect(() => {
-    bindersRef.current = state.binders;
-  }, [state.binders]);
-
-  useEffect(() => {
+    stateRef.current = state;
     saveState(state);
   }, [state]);
 
@@ -26,11 +63,13 @@ export const useBinders = () => {
   const createBinder = useCallback((binderData) => {
     const newBinder = {
       id: crypto.randomUUID(),
-      name: binderData.name,
+      name: binderData.name.trim(),
       gameType: binderData.gameType,
       setCode: binderData.setCode ?? '',
+      setSize: binderData.setSize ?? null,
       gridCols: binderData.gridCols ?? 3,
       gridRows: binderData.gridRows ?? 3,
+      createdAt: Date.now(),
       cards: {},
     };
     setState((prev) => ({
@@ -40,193 +79,212 @@ export const useBinders = () => {
     }));
   }, []);
 
+  const updateBinder = useCallback((binderId, changes) => {
+    setState((prev) =>
+      mapBinder(prev, binderId, (b) => {
+        const next = { ...b, ...changes, name: (changes.name ?? b.name).trim() };
+        // Images depend on the set: drop them so they are re-fetched for the new set
+        if (next.setCode !== b.setCode || next.gameType !== b.gameType) {
+          next.cards = Object.fromEntries(
+            Object.entries(b.cards).map(([num, c]) => [num, { ...c, imageUrl: null }])
+          );
+        }
+        return next;
+      })
+    );
+  }, []);
+
+  /** Deletes a binder and returns what is needed to restore it. */
   const deleteBinder = useCallback((binderId) => {
-    setState((prev) => ({
-      ...prev,
-      binders: prev.binders.filter((b) => b.id !== binderId),
-      activeBinderId:
-        prev.activeBinderId === binderId
-          ? (prev.binders.find((b) => b.id !== binderId)?.id ?? null)
-          : prev.activeBinderId,
-    }));
+    const prev = stateRef.current;
+    const index = prev.binders.findIndex((b) => b.id === binderId);
+    if (index === -1) return null;
+    const snapshot = { binder: prev.binders[index], index, wasActive: prev.activeBinderId === binderId };
+    setState((p) => {
+      const binders = p.binders.filter((b) => b.id !== binderId);
+      return {
+        ...p,
+        binders,
+        activeBinderId:
+          p.activeBinderId === binderId
+            ? (binders[Math.min(index, binders.length - 1)]?.id ?? null)
+            : p.activeBinderId,
+      };
+    });
+    return snapshot;
+  }, []);
+
+  const restoreBinder = useCallback(({ binder, index, wasActive }) => {
+    setState((prev) => {
+      if (prev.binders.some((b) => b.id === binder.id)) return prev;
+      const binders = [...prev.binders];
+      binders.splice(index, 0, binder);
+      return { ...prev, binders, activeBinderId: wasActive ? binder.id : prev.activeBinderId };
+    });
+  }, []);
+
+  const duplicateBinder = useCallback((binderId) => {
+    setState((prev) => {
+      const source = prev.binders.find((b) => b.id === binderId);
+      if (!source) return prev;
+      const copy = {
+        ...source,
+        id: crypto.randomUUID(),
+        name: `${source.name} (copie)`,
+        createdAt: Date.now(),
+        cards: {},
+      };
+      const index = prev.binders.indexOf(source) + 1;
+      const binders = [...prev.binders];
+      binders.splice(index, 0, copy);
+      return { ...prev, binders, activeBinderId: copy.id };
+    });
   }, []);
 
   const setActiveBinder = useCallback((binderId) => {
     setState((prev) => ({ ...prev, activeBinderId: binderId }));
   }, []);
 
-  const addCard = useCallback(async (binderId, cardNumber) => {
-    const numStr = String(cardNumber);
-
-    // Read current binder info before async fetch
-    const binder = bindersRef.current.find((b) => b.id === binderId);
-    const isLorcana = binder?.gameType === 'lorcana' && binder.setCode;
-    const alreadyHasImage = Boolean(binder?.cards[numStr]?.imageUrl);
-
-    // Synchronous: increment quantity
+  /** Adds one or several cards at once. entries: [{ cardNumber, qty }] */
+  const addCards = useCallback((binderId, entries) => {
     setState((prev) => {
-      const b = prev.binders.find((b) => b.id === binderId);
+      const b = prev.binders.find((x) => x.id === binderId);
       if (!b) return prev;
-      const existing = b.cards[numStr];
-      return {
-        ...prev,
-        binders: prev.binders.map((x) =>
-          x.id !== binderId
-            ? x
-            : {
-                ...x,
-                cards: {
-                  ...x.cards,
-                  [numStr]: {
-                    quantity: (existing?.quantity ?? 0) + 1,
-                    exportedQuantity: existing?.exportedQuantity ?? 0,
-                    imageUrl: existing?.imageUrl ?? null,
-                  },
-                },
-              }
-        ),
-        addHistory: [...prev.addHistory, { cardNumber, binderId }],
-      };
-    });
-
-    // Async: fetch image for Lorcana cards not yet cached
-    if (isLorcana && !alreadyHasImage) {
-      const imageUrl = await fetchLorcastCard(binder.setCode, cardNumber);
-      if (imageUrl) {
-        setState((prev) => ({
-          ...prev,
-          binders: prev.binders.map((x) => {
-            if (x.id !== binderId) return x;
-            const card = x.cards[numStr];
-            if (!card) return x;
-            return { ...x, cards: { ...x.cards, [numStr]: { ...card, imageUrl } } };
-          }),
-        }));
+      let cards = b.cards;
+      for (const { cardNumber, qty } of entries) {
+        const numStr = String(cardNumber);
+        cards = withQuantity(cards, numStr, (cards[numStr]?.quantity ?? 0) + qty);
       }
-    }
+      const history = [
+        ...prev.addHistory,
+        ...entries.map(({ cardNumber, qty }) => ({ binderId, cardNumber, qty, at: Date.now() })),
+      ].slice(-MAX_HISTORY);
+      return { ...mapBinder(prev, binderId, (x) => ({ ...x, cards })), addHistory: history };
+    });
+  }, []);
+
+  const setCardQuantity = useCallback((binderId, cardNumber, quantity) => {
+    setState((prev) =>
+      mapBinder(prev, binderId, (b) => ({
+        ...b,
+        cards: withQuantity(b.cards, String(cardNumber), quantity),
+      }))
+    );
   }, []);
 
   const removeCard = useCallback((binderId, cardNumber) => {
-    const numStr = String(cardNumber);
-    setState((prev) => {
-      const b = prev.binders.find((x) => x.id === binderId);
-      if (!b) return prev;
-      const existing = b.cards[numStr];
-      if (!existing || existing.quantity <= 0) return prev;
-      const newCards = { ...b.cards };
-      if (existing.quantity === 1) {
-        delete newCards[numStr];
-      } else {
-        newCards[numStr] = { ...existing, quantity: existing.quantity - 1 };
+    setState((prev) =>
+      mapBinder(prev, binderId, (b) => {
+        const numStr = String(cardNumber);
+        const existing = b.cards[numStr];
+        if (!existing) return b;
+        return { ...b, cards: withQuantity(b.cards, numStr, existing.quantity - 1) };
+      })
+    );
+  }, []);
+
+  /** Undoes the last addition made in the given binder. Returns the undone entry (or null). */
+  const removeLastAdded = useCallback((binderId) => {
+    const history = stateRef.current.addHistory;
+    let idx = -1;
+    for (let i = history.length - 1; i >= 0; i--) {
+      if (history[i].binderId === binderId) {
+        idx = i;
+        break;
       }
+    }
+    if (idx === -1) return null;
+    const entry = { qty: 1, ...history[idx] };
+    setState((prev) => {
+      const addHistory = prev.addHistory.filter((_, i) => i !== idx);
       return {
-        ...prev,
-        binders: prev.binders.map((x) => (x.id === binderId ? { ...x, cards: newCards } : x)),
+        ...mapBinder(prev, binderId, (b) => {
+          const numStr = String(entry.cardNumber);
+          const existing = b.cards[numStr];
+          if (!existing) return b;
+          return { ...b, cards: withQuantity(b.cards, numStr, existing.quantity - entry.qty) };
+        }),
+        addHistory,
       };
     });
+    return entry;
   }, []);
 
-  const removeLastAdded = useCallback(() => {
-    setState((prev) => {
-      if (prev.addHistory.length === 0) return prev;
-      const last = prev.addHistory[prev.addHistory.length - 1];
-      const newHistory = prev.addHistory.slice(0, -1);
-      const { binderId, cardNumber } = last;
-      const numStr = String(cardNumber);
-      const b = prev.binders.find((x) => x.id === binderId);
-      if (!b) return { ...prev, addHistory: newHistory };
-      const existing = b.cards[numStr];
-      if (!existing) return { ...prev, addHistory: newHistory };
-      const newCards = { ...b.cards };
-      if (existing.quantity === 1) {
-        delete newCards[numStr];
-      } else {
-        newCards[numStr] = { ...existing, quantity: existing.quantity - 1 };
-      }
-      return {
-        ...prev,
-        addHistory: newHistory,
-        binders: prev.binders.map((x) => (x.id === binderId ? { ...x, cards: newCards } : x)),
-      };
-    });
-  }, []);
-
-  const markExported = useCallback((binderId, cardNumber, qty) => {
-    const numStr = String(cardNumber);
-    setState((prev) => ({
-      ...prev,
-      binders: prev.binders.map((b) => {
-        if (b.id !== binderId) return b;
-        const card = b.cards[numStr];
-        if (!card) return b;
-        const newExported = Math.min(card.quantity, (card.exportedQuantity ?? 0) + qty);
-        return { ...b, cards: { ...b.cards, [numStr]: { ...card, exportedQuantity: newExported } } };
-      }),
-    }));
-  }, []);
-
-  const unmarkExported = useCallback((binderId, cardNumber, qty) => {
-    const numStr = String(cardNumber);
-    setState((prev) => ({
-      ...prev,
-      binders: prev.binders.map((b) => {
-        if (b.id !== binderId) return b;
-        const card = b.cards[numStr];
-        if (!card) return b;
-        const newExported = Math.max(0, (card.exportedQuantity ?? 0) - qty);
-        return { ...b, cards: { ...b.cards, [numStr]: { ...card, exportedQuantity: newExported } } };
-      }),
-    }));
+  /** Fetches missing Lorcana images for the given card numbers. */
+  const hydrateImages = useCallback(async (binderId, cardNumbers) => {
+    const binder = stateRef.current.binders.find((b) => b.id === binderId);
+    if (!binder || binder.gameType !== 'lorcana' || !binder.setCode) return;
+    const missing = cardNumbers.filter((n) => binder.cards[String(n)] && !binder.cards[String(n)].imageUrl);
+    await Promise.all(
+      missing.map(async (cardNumber) => {
+        const imageUrl = await fetchLorcastCard(binder.setCode, cardNumber);
+        if (!imageUrl) return;
+        setState((prev) =>
+          mapBinder(prev, binderId, (b) => {
+            const numStr = String(cardNumber);
+            const card = b.cards[numStr];
+            if (!card || card.imageUrl || b.setCode !== binder.setCode) return b;
+            return { ...b, cards: { ...b.cards, [numStr]: { ...card, imageUrl } } };
+          })
+        );
+      })
+    );
   }, []);
 
   /** Marks all pending quantities as exported — called automatically after CSV download. */
   const bulkMarkExported = useCallback((binderId) => {
-    setState((prev) => ({
-      ...prev,
-      binders: prev.binders.map((b) => {
-        if (b.id !== binderId) return b;
-        const newCards = Object.fromEntries(
-          Object.entries(b.cards).map(([num, data]) => [
-            num,
-            { ...data, exportedQuantity: data.quantity },
-          ])
-        );
-        return { ...b, cards: newCards };
-      }),
-    }));
+    setState((prev) =>
+      mapBinder(prev, binderId, (b) => ({
+        ...b,
+        cards: Object.fromEntries(
+          Object.entries(b.cards).map(([num, data]) => [num, { ...data, exportedQuantity: data.quantity }])
+        ),
+      }))
+    );
   }, []);
 
   /** Resets all export marks to 0 for a binder. */
   const resetExports = useCallback((binderId) => {
-    setState((prev) => ({
-      ...prev,
-      binders: prev.binders.map((b) => {
-        if (b.id !== binderId) return b;
-        const newCards = Object.fromEntries(
-          Object.entries(b.cards).map(([num, data]) => [
-            num,
-            { ...data, exportedQuantity: 0 },
-          ])
-        );
-        return { ...b, cards: newCards };
-      }),
-    }));
+    setState((prev) =>
+      mapBinder(prev, binderId, (b) => ({
+        ...b,
+        cards: Object.fromEntries(
+          Object.entries(b.cards).map(([num, data]) => [num, { ...data, exportedQuantity: 0 }])
+        ),
+      }))
+    );
+  }, []);
+
+  const setPref = useCallback((key, value) => {
+    setState((prev) => ({ ...prev, prefs: { ...prev.prefs, [key]: value } }));
+  }, []);
+
+  /** Replaces the whole state with an imported backup. Throws if the file is not a backup. */
+  const importState = useCallback((data) => {
+    if (!data || !Array.isArray(data.binders)) throw new Error('Fichier de sauvegarde invalide');
+    setState(migrate(data));
   }, []);
 
   return {
     binders: state.binders,
     activeBinder,
-    activeBinderId: state.activeBinderId,
     addHistory: state.addHistory,
+    prefs: state.prefs,
+    state,
     createBinder,
+    updateBinder,
     deleteBinder,
+    restoreBinder,
+    duplicateBinder,
     setActiveBinder,
-    addCard,
+    addCards,
+    setCardQuantity,
     removeCard,
     removeLastAdded,
-    markExported,
-    unmarkExported,
+    hydrateImages,
     bulkMarkExported,
     resetExports,
+    setPref,
+    importState,
   };
 };

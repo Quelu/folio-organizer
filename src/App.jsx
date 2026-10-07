@@ -1,72 +1,234 @@
-import { useState } from 'react';
-import { BookOpen } from 'lucide-react';
+import { useState, useCallback } from 'react';
+import { Library, Menu as MenuIcon, Hash, MousePointerClick, Download } from 'lucide-react';
 import { useBinders } from './hooks/useBinders';
 import Sidebar from './components/Sidebar/Sidebar';
 import BinderView from './components/BinderView/BinderView';
-import CreateBinderModal from './components/Modals/CreateBinderModal';
+import BinderFormModal from './components/Modals/BinderFormModal';
+import ConfirmDialog from './components/ui/ConfirmDialog';
+import ToastProvider from './components/ui/ToastProvider';
+import { useToast } from './components/ui/toastContext';
 
-const App = () => {
-  const [isModalOpen, setIsModalOpen] = useState(false);
+const STEPS = [
+  { icon: Hash, title: 'Tape un numéro', text: 'La carte est rangée et tu vois sa page, sa rangée et sa colonne.' },
+  { icon: MousePointerClick, title: 'Gère depuis la grille', text: 'Clique une poche pour voir la carte et ajuster les quantités.' },
+  { icon: Download, title: 'Exporte', text: 'Envoie tes cartes Lorcana vers Dreamborn en un clic.' },
+];
+
+const Welcome = ({ onCreate, onOpenSidebar }) => (
+  <div className="flex-1 flex flex-col">
+    <div className="lg:hidden p-3">
+      <button onClick={onOpenSidebar} className="btn-icon" aria-label="Ouvrir le menu">
+        <MenuIcon size={20} />
+      </button>
+    </div>
+    <div className="flex-1 flex flex-col items-center justify-center gap-8 text-center p-8">
+      <div className="relative">
+        <div className="absolute inset-0 blur-3xl bg-indigo-500/30 rounded-full" />
+        <div className="relative w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center shadow-2xl shadow-indigo-500/40">
+          <Library size={38} className="text-white" />
+        </div>
+      </div>
+      <div>
+        <h1 className="text-3xl sm:text-4xl font-black text-white mb-3 tracking-tight">Range tes cartes sans réfléchir</h1>
+        <p className="text-slate-400 max-w-md mx-auto leading-relaxed">
+          Folio te dit exactement sur quelle page, quelle feuille et dans quelle poche chaque carte doit aller.
+        </p>
+      </div>
+      <button onClick={onCreate} className="btn-primary px-8 py-3 text-base">
+        Créer ma première farde
+      </button>
+      <div className="grid sm:grid-cols-3 gap-3 max-w-3xl w-full mt-4">
+        {STEPS.map(({ icon: Icon, title, text }, i) => (
+          <div key={title} className="rounded-xl bg-white/[0.03] ring-1 ring-inset ring-white/5 p-4 text-left">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-[11px] font-bold text-indigo-300 tabular-nums">0{i + 1}</span>
+              <Icon size={15} className="text-slate-400" />
+              <span className="text-sm font-semibold text-white">{title}</span>
+            </div>
+            <p className="text-xs text-slate-500 leading-relaxed">{text}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+);
+
+const AppContent = () => {
+  const notify = useToast();
+  const [formState, setFormState] = useState({ open: false, binder: null });
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [pendingImport, setPendingImport] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const {
     binders,
     activeBinder,
+    addHistory,
+    prefs,
+    state,
     createBinder,
+    updateBinder,
+    deleteBinder,
+    restoreBinder,
+    duplicateBinder,
     setActiveBinder,
-    addCard,
+    addCards,
+    setCardQuantity,
     removeCard,
     removeLastAdded,
+    hydrateImages,
     bulkMarkExported,
     resetExports,
+    setPref,
+    importState,
   } = useBinders();
 
+  const openCreate = useCallback(() => {
+    setSidebarOpen(false);
+    setFormState({ open: true, binder: null });
+  }, []);
+  const openEdit = useCallback((binder) => {
+    setSidebarOpen(false);
+    setFormState({ open: true, binder });
+  }, []);
+  const closeForm = useCallback(() => setFormState((s) => ({ ...s, open: false })), []);
+
+  const handleFormSubmit = (data) => {
+    if (formState.binder) {
+      updateBinder(formState.binder.id, data);
+      notify({ tone: 'success', message: 'Farde mise à jour' });
+    } else {
+      createBinder(data);
+    }
+  };
+
+  const requestDelete = (binderId) => {
+    setSidebarOpen(false);
+    setPendingDelete(binders.find((b) => b.id === binderId) ?? null);
+  };
+
+  const confirmDelete = () => {
+    const snapshot = deleteBinder(pendingDelete.id);
+    if (!snapshot) return;
+    notify({
+      message: `« ${snapshot.binder.name} » supprimée`,
+      action: { label: 'Annuler', onClick: () => restoreBinder(snapshot) },
+      duration: 7000,
+    });
+  };
+
+  const handleDuplicate = (binderId) => {
+    duplicateBinder(binderId);
+    notify({ tone: 'success', message: 'Farde dupliquée (sans les cartes)' });
+  };
+
+  const exportBackup = () => {
+    const blob = new Blob([JSON.stringify({ ...state, exportedAt: new Date().toISOString() }, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `folio-sauvegarde-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    notify({ tone: 'success', message: 'Sauvegarde téléchargée' });
+  };
+
+  const readBackup = async (file) => {
+    try {
+      const data = JSON.parse(await file.text());
+      if (!Array.isArray(data?.binders)) throw new Error();
+      setPendingImport(data);
+    } catch {
+      notify({ tone: 'error', message: "Ce fichier n'est pas une sauvegarde Folio valide" });
+    }
+  };
+
+  const sidebarProps = {
+    binders,
+    activeBinderId: activeBinder?.id ?? null,
+    onSelect: setActiveBinder,
+    onCreateNew: openCreate,
+    onEdit: openEdit,
+    onDuplicate: handleDuplicate,
+    onDelete: requestDelete,
+    onExportBackup: exportBackup,
+    onImportBackup: readBackup,
+  };
+
   return (
-    <div className="flex h-screen bg-gray-950 text-gray-100 overflow-hidden">
-      <Sidebar
-        binders={binders}
-        activeBinderId={activeBinder?.id ?? null}
-        onSelect={setActiveBinder}
-        onCreateNew={() => setIsModalOpen(true)}
-      />
+    <div className="flex h-[100dvh] text-slate-100 overflow-hidden bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.08),transparent_60%)]">
+      <Sidebar {...sidebarProps} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <main className="flex-1 flex flex-col overflow-hidden min-w-0">
         {activeBinder ? (
           <BinderView
             key={activeBinder.id}
             binder={activeBinder}
-            onAddCard={addCard}
+            addHistory={addHistory}
+            prefs={prefs}
+            onSetPref={setPref}
+            onAddCards={addCards}
             onRemoveCard={removeCard}
+            onSetQuantity={setCardQuantity}
             onRemoveLastAdded={removeLastAdded}
+            onHydrateImages={hydrateImages}
             onBulkMarkExported={bulkMarkExported}
             onResetExports={resetExports}
+            onEdit={() => openEdit(activeBinder)}
+            onDuplicate={() => handleDuplicate(activeBinder.id)}
+            onDelete={() => requestDelete(activeBinder.id)}
+            onOpenSidebar={() => setSidebarOpen(true)}
           />
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center gap-5 text-center p-8">
-            <BookOpen size={72} className="text-gray-800" />
-            <div>
-              <h1 className="text-3xl font-black text-gray-300 mb-2">Binder Organizer</h1>
-              <p className="text-gray-600 max-w-sm leading-relaxed">
-                Organise tes cartes TCG dans tes fardes. Sache exactement sur quelle page et dans
-                quel emplacement chaque carte se trouve.
-              </p>
-            </div>
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="mt-2 py-3 px-8 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold transition-colors shadow-lg shadow-indigo-500/20"
-            >
-              Créer ma première farde
-            </button>
-          </div>
+          <Welcome onCreate={openCreate} onOpenSidebar={() => setSidebarOpen(true)} />
         )}
       </main>
 
-      <CreateBinderModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onCreate={createBinder}
+      <BinderFormModal
+        isOpen={formState.open}
+        binder={formState.binder}
+        onClose={closeForm}
+        onSubmit={handleFormSubmit}
+      />
+
+      <ConfirmDialog
+        isOpen={Boolean(pendingDelete)}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={confirmDelete}
+        title="Supprimer la farde ?"
+        message={
+          pendingDelete &&
+          `« ${pendingDelete.name} » et ses ${Object.keys(pendingDelete.cards).length} cartes seront supprimées. Tu pourras annuler pendant quelques secondes.`
+        }
+        confirmLabel="Supprimer"
+        danger
+      />
+
+      <ConfirmDialog
+        isOpen={Boolean(pendingImport)}
+        onClose={() => setPendingImport(null)}
+        onConfirm={() => {
+          importState(pendingImport);
+          notify({ tone: 'success', message: `${pendingImport.binders.length} farde(s) restaurée(s)` });
+        }}
+        title="Restaurer la sauvegarde ?"
+        message={
+          pendingImport &&
+          `Tes ${binders.length} farde(s) actuelles seront remplacées par les ${pendingImport.binders.length} farde(s) du fichier.`
+        }
+        confirmLabel="Restaurer"
+        danger
       />
     </div>
   );
 };
+
+const App = () => (
+  <ToastProvider>
+    <AppContent />
+  </ToastProvider>
+);
 
 export default App;
