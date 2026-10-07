@@ -1,11 +1,14 @@
 import { Menu as MenuIcon, Pencil, Download, RotateCcw, MoreHorizontal, Trash2, Copy, BookOpen, Square } from 'lucide-react';
+import { motion } from 'motion/react';
 import Menu from '../ui/Menu';
+import AnimatedNumber from '../ui/AnimatedNumber';
+import ProgressBar from '../ui/ProgressBar';
 import { getGame, getLorcanaSetName } from '../../data/games';
 import { getBinderStats } from '../../utils/calculations';
 
 const StatChip = ({ label, value }) => (
   <div className="flex items-baseline gap-1.5">
-    <span className="text-sm font-bold text-white tabular-nums">{value}</span>
+    <AnimatedNumber value={value} className="text-sm font-bold text-white" />
     <span className="text-xs text-slate-500">{label}</span>
   </div>
 );
@@ -82,9 +85,15 @@ const BinderHeader = ({
                 <Download size={15} />
                 <span className="hidden sm:inline">Dreamborn</span>
                 {pendingExport > 0 && (
-                  <span className="px-1.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-bold tabular-nums">
+                  <motion.span
+                    key={pendingExport}
+                    initial={{ scale: 1.6, backgroundColor: 'rgba(52,211,153,0.6)' }}
+                    animate={{ scale: 1, backgroundColor: 'rgba(16,185,129,0.2)' }}
+                    transition={{ type: 'spring', stiffness: 500, damping: 18 }}
+                    className="px-1.5 rounded-full text-emerald-300 text-[11px] font-bold tabular-nums"
+                  >
                     {pendingExport}
-                  </span>
+                  </motion.span>
                 )}
               </button>
             )}
@@ -117,14 +126,10 @@ const BinderHeader = ({
           <StatChip value={copies} label={`exemplaire${copies !== 1 ? 's' : ''}`} />
           {progress !== null && (
             <div className="flex items-center gap-2.5 flex-1 min-w-[180px] max-w-xs">
-              <div className="flex-1 h-1.5 rounded-full bg-white/5 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-400 transition-[width] duration-500"
-                  style={{ width: `${progress * 100}%` }}
-                />
-              </div>
+              <ProgressBar value={progress} className="flex-1 h-1.5" />
               <span className="text-xs text-slate-400 tabular-nums">
-                <b className="text-white">{Math.floor(progress * 100)} %</b> · {owned}/{binder.setSize}
+                <AnimatedNumber value={Math.floor(progress * 100)} className="font-bold text-white" />
+                <b className="text-white"> %</b> · <AnimatedNumber value={owned} />/{binder.setSize}
               </span>
             </div>
           )}

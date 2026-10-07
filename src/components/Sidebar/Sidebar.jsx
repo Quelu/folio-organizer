@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { Plus, Search, Download, Upload, Library, X } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, LayoutGroup } from 'motion/react';
 import BinderItem from './BinderItem';
 
 const SidebarContent = ({
@@ -64,17 +64,27 @@ const SidebarContent = ({
       </div>
 
       <nav className="flex-1 overflow-y-auto scrollbar-thin px-3 pb-3 space-y-1">
-        {filtered.map((binder) => (
-          <BinderItem
-            key={binder.id}
-            binder={binder}
-            isActive={binder.id === activeBinderId}
-            onSelect={() => onSelect(binder.id)}
-            onEdit={() => onEdit(binder)}
-            onDuplicate={() => onDuplicate(binder.id)}
-            onDelete={() => onDelete(binder.id)}
-          />
-        ))}
+        <AnimatePresence initial={false}>
+          {filtered.map((binder) => (
+            <motion.div
+              key={binder.id}
+              layout
+              initial={{ opacity: 0, x: -16, scale: 0.96 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: -24, scale: 0.94, transition: { duration: 0.18 } }}
+              transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+            >
+              <BinderItem
+                binder={binder}
+                isActive={binder.id === activeBinderId}
+                onSelect={() => onSelect(binder.id)}
+                onEdit={() => onEdit(binder)}
+                onDuplicate={() => onDuplicate(binder.id)}
+                onDelete={() => onDelete(binder.id)}
+              />
+            </motion.div>
+          ))}
+        </AnimatePresence>
         {binders.length === 0 && (
           <p className="text-slate-600 text-sm text-center mt-8 px-4 leading-relaxed">
             Aucune farde pour l'instant.
@@ -121,7 +131,9 @@ const SidebarContent = ({
 const Sidebar = ({ isOpen, onClose, ...props }) => (
   <>
     <aside className="hidden lg:block w-72 flex-shrink-0 h-full bg-slate-950/60 border-r border-white/5">
-      <SidebarContent {...props} />
+      <LayoutGroup id="sidebar-desktop">
+        <SidebarContent {...props} />
+      </LayoutGroup>
     </aside>
 
     <AnimatePresence>
@@ -141,14 +153,16 @@ const Sidebar = ({ isOpen, onClose, ...props }) => (
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
             className="lg:hidden fixed inset-y-0 left-0 z-40 w-[85vw] max-w-xs bg-slate-950 border-r border-white/5"
           >
-            <SidebarContent
-              {...props}
-              onClose={onClose}
-              onSelect={(id) => {
-                props.onSelect(id);
-                onClose();
-              }}
-            />
+            <LayoutGroup id="sidebar-drawer">
+              <SidebarContent
+                {...props}
+                onClose={onClose}
+                onSelect={(id) => {
+                  props.onSelect(id);
+                  onClose();
+                }}
+              />
+            </LayoutGroup>
           </motion.aside>
         </>
       )}

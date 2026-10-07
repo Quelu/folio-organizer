@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { motion, MotionConfig } from 'motion/react';
 import { Library, Menu as MenuIcon, Hash, MousePointerClick, Download } from 'lucide-react';
 import { useBinders } from './hooks/useBinders';
 import Sidebar from './components/Sidebar/Sidebar';
@@ -14,6 +15,11 @@ const STEPS = [
   { icon: Download, title: 'Exporte', text: 'Envoie tes cartes Lorcana vers Dreamborn en un clic.' },
 ];
 
+const welcomeItem = {
+  hidden: { opacity: 0, y: 16 },
+  show: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 260, damping: 26 } },
+};
+
 const Welcome = ({ onCreate, onOpenSidebar }) => (
   <div className="flex-1 flex flex-col">
     <div className="lg:hidden p-3">
@@ -21,35 +27,55 @@ const Welcome = ({ onCreate, onOpenSidebar }) => (
         <MenuIcon size={20} />
       </button>
     </div>
-    <div className="flex-1 flex flex-col items-center justify-center gap-8 text-center p-8">
-      <div className="relative">
-        <div className="absolute inset-0 blur-3xl bg-indigo-500/30 rounded-full" />
-        <div className="relative w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center shadow-2xl shadow-indigo-500/40">
+    <motion.div
+      className="flex-1 flex flex-col items-center justify-center gap-8 text-center p-8"
+      initial="hidden"
+      animate="show"
+      variants={{ show: { transition: { staggerChildren: 0.09 } } }}
+    >
+      <motion.div variants={welcomeItem} className="relative">
+        <motion.div
+          className="absolute inset-0 blur-3xl bg-indigo-500/40 rounded-full"
+          animate={{ opacity: [0.5, 1, 0.5], scale: [0.9, 1.15, 0.9] }}
+          transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+        />
+        <div className="relative animate-float w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center shadow-2xl shadow-indigo-500/40">
           <Library size={38} className="text-white" />
         </div>
-      </div>
-      <div>
+      </motion.div>
+      <motion.div variants={welcomeItem}>
         <h1 className="text-3xl sm:text-4xl font-black text-white mb-3 tracking-tight">Range tes cartes sans réfléchir</h1>
         <p className="text-slate-400 max-w-md mx-auto leading-relaxed">
           Folio te dit exactement sur quelle page, quelle feuille et dans quelle poche chaque carte doit aller.
         </p>
-      </div>
-      <button onClick={onCreate} className="btn-primary px-8 py-3 text-base">
+      </motion.div>
+      <motion.button
+        variants={welcomeItem}
+        whileHover={{ scale: 1.04 }}
+        whileTap={{ scale: 0.97 }}
+        onClick={onCreate}
+        className="btn-primary px-8 py-3 text-base"
+      >
         Créer ma première farde
-      </button>
+      </motion.button>
       <div className="grid sm:grid-cols-3 gap-3 max-w-3xl w-full mt-4">
         {STEPS.map(({ icon: Icon, title, text }, i) => (
-          <div key={title} className="rounded-xl bg-white/[0.03] ring-1 ring-inset ring-white/5 p-4 text-left">
+          <motion.div
+            key={title}
+            variants={welcomeItem}
+            whileHover={{ y: -4 }}
+            className="rounded-xl bg-white/[0.03] ring-1 ring-inset ring-white/5 hover:ring-white/15 transition-colors p-4 text-left"
+          >
             <div className="flex items-center gap-2 mb-1.5">
               <span className="text-[11px] font-bold text-indigo-300 tabular-nums">0{i + 1}</span>
               <Icon size={15} className="text-slate-400" />
               <span className="text-sm font-semibold text-white">{title}</span>
             </div>
             <p className="text-xs text-slate-500 leading-relaxed">{text}</p>
-          </div>
+          </motion.div>
         ))}
       </div>
-    </div>
+    </motion.div>
   </div>
 );
 
@@ -226,9 +252,12 @@ const AppContent = () => {
 };
 
 const App = () => (
-  <ToastProvider>
-    <AppContent />
-  </ToastProvider>
+  // Honors the OS "reduce motion" setting for every animation in the app
+  <MotionConfig reducedMotion="user">
+    <ToastProvider>
+      <AppContent />
+    </ToastProvider>
+  </MotionConfig>
 );
 
 export default App;

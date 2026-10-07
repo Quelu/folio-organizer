@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { fetchLorcastCard } from '../../utils/lorcastApi';
 import { getLocation } from '../../utils/calculations';
 import { getGame } from '../../data/games';
+import TiltCard from '../ui/TiltCard';
 
 /** Image for the detail view: owned cards already have one, others are previewed from Lorcast. */
 const useCardImage = (binder, cardNumber) => {
@@ -23,6 +24,12 @@ const useCardImage = (binder, cardNumber) => {
   }, [stored, binder.gameType, binder.setCode, cardNumber, key]);
 
   return stored ?? (fetched.key === key ? fetched.url : null);
+};
+
+const slideVariants = {
+  enter: (dir) => ({ opacity: 0, x: dir * 70, rotateY: dir * 35 }),
+  center: { opacity: 1, x: 0, rotateY: 0 },
+  exit: (dir) => ({ opacity: 0, x: dir * -70, rotateY: dir * -35 }),
 };
 
 const Stat = ({ label, value }) => (
@@ -90,6 +97,9 @@ const CardDetailModal = ({ binder, cardNumber, onClose, onNavigate, onSetQuantit
 };
 
 const DetailBody = ({ binder, cardNumber, onClose, onNavigate, onSetQuantity }) => {
+  // Direction of the last card change, to slide the visual the right way
+  const [nav, setNav] = useState({ card: cardNumber, dir: 0 });
+  if (nav.card !== cardNumber) setNav({ card: cardNumber, dir: cardNumber > nav.card ? 1 : -1 });
   const card = binder.cards[String(cardNumber)];
   const quantity = card?.quantity ?? 0;
   const exported = card?.exportedQuantity ?? 0;
@@ -101,20 +111,47 @@ const DetailBody = ({ binder, cardNumber, onClose, onNavigate, onSetQuantity }) 
   return (
     <div className="flex flex-col sm:flex-row gap-6 p-5 sm:p-6">
       {/* Visual */}
-      <div className="relative sm:w-64 flex-shrink-0 mx-auto w-48">
-        <div
-          className={`pocket-shine relative aspect-[5/7] rounded-xl overflow-hidden ring-1 ring-white/10 bg-gradient-to-br ${game.pocket} ${
-            quantity === 0 ? 'opacity-60 grayscale' : ''
-          }`}
+      <div className="relative sm:w-64 flex-shrink-0 mx-auto w-48" style={{ perspective: 1200 }}>
+        {/* The card flips in when the sheet opens, then slides left/right when browsing neighbours */}
+        <motion.div
+          initial={{ rotateY: -100, scale: 0.85 }}
+          animate={{ rotateY: 0, scale: 1 }}
+          transition={{ type: 'spring', stiffness: 160, damping: 18, delay: 0.05 }}
         >
-          {imageUrl ? (
-            <img src={imageUrl} alt={`Carte ${cardNumber}`} className="absolute inset-0 w-full h-full object-cover" />
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center text-6xl font-black opacity-80">
-              {cardNumber}
-            </div>
-          )}
-        </div>
+          <AnimatePresence mode="popLayout" initial={false} custom={nav.dir}>
+            <motion.div
+              key={cardNumber}
+              custom={nav.dir}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            >
+              <TiltCard
+                max={18}
+                className={`pocket-shine aspect-[5/7] rounded-xl overflow-hidden ring-1 ring-white/10 shadow-2xl shadow-black/60 bg-gradient-to-br ${game.pocket} ${
+                  quantity === 0 ? 'opacity-60 grayscale' : ''
+                }`}
+              >
+                {imageUrl ? (
+                  <motion.img
+                    key={imageUrl}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    src={imageUrl}
+                    alt={`Carte ${cardNumber}`}
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center text-6xl font-black opacity-80">
+                    {cardNumber}
+                  </div>
+                )}
+              </TiltCard>
+            </motion.div>
+          </AnimatePresence>
+        </motion.div>
         {quantity === 0 && (
           <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-950/80 text-slate-300">
             Pas encore possédée
@@ -178,7 +215,17 @@ const DetailBody = ({ binder, cardNumber, onClose, onNavigate, onSetQuantity }) 
               >
                 <Minus size={16} />
               </button>
-              <span className="w-12 text-center text-xl font-bold text-white tabular-nums">{quantity}</span>
+              <span className="w-12 text-center text-xl font-bold text-white tabular-nums overflow-hidden">
+                <motion.span
+                  key={quantity}
+                  className="inline-block"
+                  initial={{ y: -14, opacity: 0, scale: 1.3 }}
+                  animate={{ y: 0, opacity: 1, scale: 1 }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 22 }}
+                >
+                  {quantity}
+                </motion.span>
+              </span>
               <button
                 onClick={() => onSetQuantity(cardNumber, quantity + 1)}
                 className="btn-icon p-3"

@@ -1,7 +1,15 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ChevronsLeft, ChevronsRight } from 'lucide-react';
-import { getPockets, getPage, getSheet, getSpread, getSpreadPages, getCardsOnPage } from '../../utils/calculations';
+import {
+  getPockets,
+  getPage,
+  getSheet,
+  getSpread,
+  getSpreadPages,
+  getCardsOnPage,
+  getBinderStats,
+} from '../../utils/calculations';
 import { getDreambornExportRows, generateDreambornCsv, downloadCsv } from '../../utils/csvExport';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { useToast } from '../ui/toastContext';
@@ -31,12 +39,14 @@ const BinderView = ({
   const notify = useToast();
   const [currentPage, setCurrentPage] = useState(1);
   const [direction, setDirection] = useState(1);
-  const [highlight, setHighlight] = useState(null); // { cardNumber, token }
+  const [highlight, setHighlight] = useState(null); // { cardNumber, token, kind: 'add'|'remove'|'locate' }
+  const [celebrate, setCelebrate] = useState(null); // { page, token }
   const [pageHint, setPageHint] = useState(null); // { sheets, forward, toSheet }
   const [lastAction, setLastAction] = useState(null);
   const [detailCard, setDetailCard] = useState(null);
   const highlightTimerRef = useRef(null);
   const hintTimerRef = useRef(null);
+  const celebrateTimerRef = useRef(null);
   const tokenRef = useRef(0);
   const inputRef = useRef(null);
 
@@ -57,6 +67,7 @@ const BinderView = ({
     return () => {
       clearTimeout(highlightTimerRef.current);
       clearTimeout(hintTimerRef.current);
+      clearTimeout(celebrateTimerRef.current);
     };
   }, []);
 
@@ -96,9 +107,16 @@ const BinderView = ({
     [spreadMode, currentPage, totalPages, navigateTo]
   );
 
+  /** Plays the add / remove / locate feedback on a pocket. */
+  const pulseCard = useCallback((cardNumber, kind) => {
+    setHighlight({ cardNumber, kind, token: ++tokenRef.current });
+    clearTimeout(highlightTimerRef.current);
+    highlightTimerRef.current = setTimeout(() => setHighlight(null), 1600);
+  }, []);
+
   /** Moves to the card's page, pulses it and tells how many sheets to turn in the real binder. */
   const focusCard = useCallback(
-    (cardNumber) => {
+    (cardNumber, kind = 'locate') => {
       const page = getPage(cardNumber, pockets);
       const forward = page >= currentPage;
       setDirection(forward ? 1 : -1);
@@ -113,25 +131,53 @@ const BinderView = ({
       }
 
       setCurrentPage(page);
-      setHighlight({ cardNumber, token: ++tokenRef.current });
-      clearTimeout(highlightTimerRef.current);
-      highlightTimerRef.current = setTimeout(() => setHighlight(null), 1600);
+      pulseCard(cardNumber, kind);
     },
-    [pockets, currentPage]
+    [pockets, currentPage, pulseCard]
+  );
+
+  /** Celebrates pages (and the whole set) that the given additions complete. */
+  const celebrateCompletions = useCallback(
+    (entries) => {
+      const newNumbers = [...new Set(entries.map((e) => e.cardNumber))].filter((n) => !binder.cards[String(n)]);
+      if (newNumbers.length === 0) return;
+
+      const completed = [...new Set(newNumbers.map((n) => getPage(n, pockets)))].filter((page) =>
+        getCardsOnPage(page, pockets).every((n) => binder.cards[String(n)] || newNumbers.includes(n))
+      );
+      const lastPage = getPage(entries[entries.length - 1].cardNumber, pockets);
+      const page = completed.includes(lastPage) ? lastPage : completed[0];
+      if (page) {
+        setCelebrate({ page, token: ++tokenRef.current });
+        clearTimeout(celebrateTimerRef.current);
+        celebrateTimerRef.current = setTimeout(() => setCelebrate(null), 2200);
+        notify({ tone: 'success', message: `Page ${page} complète !` });
+      }
+
+      if (binder.setSize) {
+        const before = getBinderStats(binder).owned;
+        const gained = newNumbers.filter((n) => n <= binder.setSize).length;
+        if (before < binder.setSize && before + gained >= binder.setSize) {
+          notify({ tone: 'success', message: `Set complet : ${binder.setSize}/${binder.setSize} 🎉`, duration: 7000 });
+        }
+      }
+    },
+    [binder, pockets, notify]
   );
 
   const handleAdd = useCallback(
     (entries) => {
+      celebrateCompletions(entries);
       onAddCards(binder.id, entries);
       const last = entries[entries.length - 1];
-      focusCard(last.cardNumber);
+      focusCard(last.cardNumber, 'add');
       setLastAction(
         entries.length === 1
           ? { id: tokenRef.current, type: 'add', cardNumber: last.cardNumber }
           : { id: tokenRef.current, type: 'batch', count: entries.length }
       );
     },
-    [binder.id, onAddCards, focusCard]
+    [binder.id, onAddCards, focusCard, celebrateCompletions]
   );
 
   const handleLocate = useCallback(
@@ -145,7 +191,7 @@ const BinderView = ({
   const handleDecrement = useCallback(
     (cardNumber) => {
       onRemoveCard(binder.id, cardNumber);
-      focusCard(cardNumber);
+      focusCard(cardNumber, 'remove');
     },
     [binder.id, onRemoveCard, focusCard]
   );
@@ -153,17 +199,21 @@ const BinderView = ({
   const handleUndo = useCallback(() => {
     const entry = onRemoveLastAdded(binder.id);
     if (!entry) return;
-    focusCard(entry.cardNumber);
+    focusCard(entry.cardNumber, 'remove');
     setLastAction({ id: tokenRef.current, type: 'undo', cardNumber: entry.cardNumber, qty: entry.qty });
   }, [binder.id, onRemoveLastAdded, focusCard]);
 
   const handleStepCard = useCallback(
     (cardNumber, delta) => {
-      if (delta > 0) onAddCards(binder.id, [{ cardNumber, qty: 1 }]);
-      else onRemoveCard(binder.id, cardNumber);
-      setHighlight({ cardNumber, token: ++tokenRef.current });
+      if (delta > 0) {
+        celebrateCompletions([{ cardNumber, qty: 1 }]);
+        onAddCards(binder.id, [{ cardNumber, qty: 1 }]);
+      } else {
+        onRemoveCard(binder.id, cardNumber);
+      }
+      pulseCard(cardNumber, delta > 0 ? 'add' : 'remove');
     },
-    [binder.id, onAddCards, onRemoveCard]
+    [binder.id, onAddCards, onRemoveCard, pulseCard, celebrateCompletions]
   );
 
   const handleDetailNavigate = useCallback(
@@ -203,6 +253,7 @@ const BinderView = ({
 
   const recent = addHistory
     .filter((h) => h.binderId === binder.id)
+    .map((h, seq) => ({ ...h, seq }))
     .slice(-10)
     .reverse();
 
@@ -290,6 +341,7 @@ const BinderView = ({
             spreadMode={spreadMode}
             direction={direction}
             highlight={highlight}
+            celebrate={celebrate}
             onOpenCard={setDetailCard}
             onStepCard={handleStepCard}
           />

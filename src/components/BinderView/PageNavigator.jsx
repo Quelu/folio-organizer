@@ -1,3 +1,4 @@
+import { motion } from 'motion/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { getCardsOnPage, getSpread } from '../../utils/calculations';
 
@@ -18,6 +19,10 @@ const PageNavigator = ({ binder, page, totalPages, spreadMode, onNavigate, onSte
     return { p, ratio: filled / pockets, active, groupStart };
   });
 
+  // A single cursor, stretched over both pages of the open spread
+  const firstActive = pages.find((x) => x.active)?.p;
+  const cursorSpan = pages.filter((x) => x.active).length;
+
   return (
     <div className="flex items-center gap-3 mt-6">
       <button onClick={() => onStep(-1)} disabled={!canPrev} className="btn-secondary px-2.5" aria-label="Page précédente">
@@ -33,17 +38,26 @@ const PageNavigator = ({ binder, page, totalPages, spreadMode, onNavigate, onSte
               title={`Page ${p} — ${Math.round(ratio * 100)} % remplie`}
               aria-label={`Aller à la page ${p}`}
               aria-current={active ? 'page' : undefined}
-              className={`group relative w-3.5 h-7 rounded-[3px] overflow-hidden transition-all ${
-                active ? 'ring-2 ring-indigo-400 ring-offset-2 ring-offset-[#0b0d14]' : 'hover:ring-1 hover:ring-white/30'
-              } ${groupStart ? 'ml-1' : ''}`}
+              className={`group relative w-3.5 h-7 transition-transform hover:-translate-y-0.5 ${groupStart ? 'ml-1' : ''}`}
             >
-              <span className="absolute inset-0 bg-white/[0.06]" />
-              <span
-                className={`absolute inset-x-0 bottom-0 transition-all ${
-                  ratio === 1 ? 'bg-emerald-400/80' : 'bg-indigo-400/70'
-                }`}
-                style={{ height: `${ratio * 100}%` }}
-              />
+              <span className="absolute inset-0 rounded-[3px] overflow-hidden bg-white/[0.06] group-hover:bg-white/10 transition-colors">
+                <motion.span
+                  className={`absolute inset-x-0 bottom-0 ${ratio === 1 ? 'bg-emerald-400/80' : 'bg-indigo-400/70'}`}
+                  initial={false}
+                  animate={{ height: `${ratio * 100}%` }}
+                  transition={{ type: 'spring', stiffness: 200, damping: 24 }}
+                />
+              </span>
+              {/* Cursor glides between pages */}
+              {p === firstActive && (
+                <motion.span
+                  layoutId="page-cursor"
+                  className={`absolute -inset-[3px] rounded-[5px] ring-2 ring-indigo-400 shadow-[0_0_12px_rgba(129,140,248,0.6)] ${
+                    cursorSpan > 1 ? '-right-5' : ''
+                  }`}
+                  transition={{ type: 'spring', stiffness: 500, damping: 36 }}
+                />
+              )}
             </button>
           ))}
         </div>

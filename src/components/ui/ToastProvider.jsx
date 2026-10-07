@@ -4,9 +4,9 @@ import { CheckCircle2, AlertTriangle, Info } from 'lucide-react';
 import { ToastContext } from './toastContext';
 
 const TONES = {
-  success: { icon: CheckCircle2, className: 'text-emerald-400' },
-  error: { icon: AlertTriangle, className: 'text-rose-400' },
-  info: { icon: Info, className: 'text-indigo-300' },
+  success: { icon: CheckCircle2, className: 'text-emerald-400', bar: 'bg-emerald-400/60' },
+  error: { icon: AlertTriangle, className: 'text-rose-400', bar: 'bg-rose-400/60' },
+  info: { icon: Info, className: 'text-indigo-300', bar: 'bg-indigo-400/60' },
 };
 
 const ToastProvider = ({ children }) => {
@@ -18,7 +18,7 @@ const ToastProvider = ({ children }) => {
   const notify = useCallback(
     ({ message, tone = 'info', action, duration = 4500 }) => {
       const id = ++idRef.current;
-      setToasts((t) => [...t.slice(-2), { id, message, tone, action }]);
+      setToasts((t) => [...t.slice(-2), { id, message, tone, action, duration }]);
       setTimeout(() => dismiss(id), duration);
     },
     [dismiss]
@@ -30,19 +30,34 @@ const ToastProvider = ({ children }) => {
       <div className="fixed bottom-4 right-4 left-4 sm:left-auto z-[60] flex flex-col items-end gap-2 pointer-events-none">
         <AnimatePresence>
           {toasts.map((t) => {
-            const { icon: Icon, className } = TONES[t.tone];
+            const { icon: Icon, className, bar } = TONES[t.tone];
             return (
               <motion.div
                 key={t.id}
                 layout
-                initial={{ opacity: 0, y: 16, scale: 0.96 }}
+                initial={{ opacity: 0, y: 24, scale: 0.9 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, x: 24 }}
-                transition={{ duration: 0.18 }}
-                className="surface pointer-events-auto flex items-center gap-3 pl-4 pr-2 py-2.5 rounded-xl text-sm max-w-sm w-full sm:w-auto"
+                exit={{ opacity: 0, x: 40, scale: 0.95, transition: { duration: 0.2 } }}
+                transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+                className="surface relative overflow-hidden pointer-events-auto flex items-center gap-3 pl-4 pr-2 py-2.5 rounded-xl text-sm max-w-sm w-full sm:w-auto"
                 role="status"
               >
-                <Icon size={17} className={`flex-shrink-0 ${className}`} />
+                <motion.span
+                  initial={{ scale: 0, rotate: -45 }}
+                  animate={{ scale: 1, rotate: 0 }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 15, delay: 0.08 }}
+                  className="flex-shrink-0"
+                >
+                  <Icon size={17} className={className} />
+                </motion.span>
+                {/* Time left before the toast disappears */}
+                <motion.span
+                  aria-hidden
+                  className={`absolute bottom-0 left-0 h-0.5 w-full origin-left ${bar}`}
+                  initial={{ scaleX: 1 }}
+                  animate={{ scaleX: 0 }}
+                  transition={{ duration: t.duration / 1000, ease: 'linear' }}
+                />
                 <span className="text-slate-200 flex-1">{t.message}</span>
                 {t.action && (
                   <button

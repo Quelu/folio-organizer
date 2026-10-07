@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Hash, Plus, Minus, LocateFixed, Undo2, CheckCircle2, MapPin, History } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useAnimate } from 'motion/react';
 import { parseCardInput, getLocation } from '../../utils/calculations';
 
 const LocationText = ({ loc }) => (
@@ -114,6 +114,7 @@ const CardInputBar = ({
   canUndo,
 }) => {
   const [value, setValue] = useState('');
+  const [fieldScope, animateField] = useAnimate();
   const parsed = value.trim() ? parseCardInput(value) : null;
   const single = parsed?.length === 1 ? parsed[0] : null;
 
@@ -124,21 +125,41 @@ const CardInputBar = ({
 
   const refocus = () => inputRef.current?.focus();
 
+  const shake = () => animateField(fieldScope.current, { x: [0, -8, 8, -5, 5, 0] }, { duration: 0.35 });
+  const flash = (rgb) =>
+    animateField(
+      'input',
+      { boxShadow: [`0 0 0 0 rgba(${rgb},0.55)`, `0 0 0 10px rgba(${rgb},0)`] },
+      { duration: 0.55, ease: 'easeOut' }
+    );
+
   const submit = () => {
-    if (!parsed) return;
+    if (!parsed) {
+      if (value.trim()) shake();
+      return;
+    }
+    flash('52,211,153');
     onAdd(parsed);
     setValue('');
     refocus();
   };
 
   const locate = () => {
-    if (!single) return;
+    if (!single) {
+      if (value.trim()) shake();
+      return;
+    }
+    flash('129,140,248');
     onLocate(single.cardNumber);
     refocus();
   };
 
   const step = (delta) => {
-    if (!single) return;
+    if (!single) {
+      if (value.trim()) shake();
+      return;
+    }
+    flash(delta > 0 ? '52,211,153' : '251,113,133');
     if (delta > 0) onAdd([{ cardNumber: single.cardNumber, qty: 1 }]);
     else onDecrement(single.cardNumber);
     refocus();
@@ -183,7 +204,7 @@ const CardInputBar = ({
     <div className="border-b border-white/5 bg-slate-950/40 backdrop-blur px-4 sm:px-6 py-4">
       <div className="max-w-5xl mx-auto">
         <div className="flex items-center gap-2">
-          <div className="flex-1 relative">
+          <div ref={fieldScope} className="flex-1 relative">
             <Hash size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
             <input
               ref={inputRef}
@@ -249,24 +270,31 @@ const CardInputBar = ({
           {recent.length > 0 ? (
             <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto scrollbar-thin pb-0.5">
               <History size={13} className="text-slate-600 flex-shrink-0" />
-              {recent.map((r, i) => (
-                <button
-                  key={`${r.cardNumber}-${r.at ?? i}-${i}`}
-                  onClick={() => {
-                    onLocate(r.cardNumber);
-                    refocus();
-                  }}
-                  className={`flex-shrink-0 px-2 py-0.5 rounded-md text-[11px] font-medium tabular-nums ring-1 ring-inset transition-colors ${
-                    i === 0
-                      ? 'bg-indigo-500/15 text-indigo-200 ring-indigo-400/30'
-                      : 'bg-white/[0.03] text-slate-400 ring-white/10 hover:text-white'
-                  }`}
-                  title={`Localiser la carte #${r.cardNumber}`}
-                >
-                  #{r.cardNumber}
-                  {r.qty > 1 && <span className="opacity-60"> ×{r.qty}</span>}
-                </button>
-              ))}
+              <AnimatePresence initial={false} mode="popLayout">
+                {recent.map((r, i) => (
+                  <motion.button
+                    key={r.seq}
+                    layout
+                    initial={{ opacity: 0, scale: 0.5, x: -10 }}
+                    animate={{ opacity: 1, scale: 1, x: 0 }}
+                    exit={{ opacity: 0, scale: 0.5 }}
+                    transition={{ type: 'spring', stiffness: 500, damping: 32 }}
+                    onClick={() => {
+                      onLocate(r.cardNumber);
+                      refocus();
+                    }}
+                    className={`flex-shrink-0 px-2 py-0.5 rounded-md text-[11px] font-medium tabular-nums ring-1 ring-inset transition-colors ${
+                      i === 0
+                        ? 'bg-indigo-500/15 text-indigo-200 ring-indigo-400/30'
+                        : 'bg-white/[0.03] text-slate-400 ring-white/10 hover:text-white'
+                    }`}
+                    title={`Localiser la carte #${r.cardNumber}`}
+                  >
+                    #{r.cardNumber}
+                    {r.qty > 1 && <span className="opacity-60"> ×{r.qty}</span>}
+                  </motion.button>
+                ))}
+              </AnimatePresence>
             </div>
           ) : (
             <div />

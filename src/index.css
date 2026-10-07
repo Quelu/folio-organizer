@@ -88,3 +88,55 @@
     scrollbar-color: rgb(255 255 255 / 0.1) transparent;
   }
 }
+
+@layer components {
+  /* Rainbow foil revealed by TiltCard on hover */
+  .holo-foil {
+    background-image: linear-gradient(
+      115deg,
+      transparent 20%,
+      rgb(255 0 170 / 0.35) 36%,
+      rgb(0 255 230 / 0.35) 48%,
+      rgb(255 230 0 / 0.3) 60%,
+      transparent 78%
+    );
+    background-size: 260% 100%;
+  }
+
+  /* Light sweep across progress fills */
+  .shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.45), transparent);
+    transform: translateX(-100%);
+    animation: shimmer 2.8s ease-in-out infinite;
+  }
+
+  @keyframes shimmer {
+    60%,
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-8px);
+    }
+  }
+  .animate-float {
+    animation: float 4s ease-in-out infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer::after,
+  .animate-float {
+    animation: none;
+  }
+}

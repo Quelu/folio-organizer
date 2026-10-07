@@ -1,5 +1,7 @@
 import { MoreHorizontal, Pencil, Copy, Trash2 } from 'lucide-react';
+import { motion } from 'motion/react';
 import Menu from '../ui/Menu';
+import ProgressBar from '../ui/ProgressBar';
 import { getGame, getLorcanaSetName } from '../../data/games';
 import { getBinderStats } from '../../utils/calculations';
 
@@ -13,12 +15,19 @@ const BinderItem = ({ binder, isActive, onSelect, onEdit, onDuplicate, onDelete 
 
   return (
     <div
-      className={`group relative rounded-xl transition-colors ${
-        isActive ? 'bg-white/[0.07] ring-1 ring-inset ring-white/10' : 'hover:bg-white/[0.04]'
-      }`}
+      className={`group relative rounded-xl transition-colors ${isActive ? '' : 'hover:bg-white/[0.04]'}`}
     >
-      {isActive && <span className="absolute left-0 top-3 bottom-3 w-[3px] rounded-r bg-indigo-400" />}
-      <button onClick={onSelect} className="w-full text-left pl-4 pr-10 py-3">
+      {/* Active background and accent glide from one binder to the next */}
+      {isActive && (
+        <motion.div
+          layoutId="active-binder"
+          className="absolute inset-0 rounded-xl bg-white/[0.07] ring-1 ring-inset ring-white/10"
+          transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+        >
+          <span className="absolute left-0 top-3 bottom-3 w-[3px] rounded-r bg-indigo-400 shadow-[0_0_10px_rgba(129,140,248,0.8)]" />
+        </motion.div>
+      )}
+      <button onClick={onSelect} className="relative w-full text-left pl-4 pr-10 py-3">
         <div className="flex items-center gap-2">
           <span className={`w-2 h-2 rounded-full flex-shrink-0 ${game.dot}`} />
           <span className={`font-medium text-sm truncate ${isActive ? 'text-white' : 'text-slate-300'}`}>
@@ -30,12 +39,7 @@ const BinderItem = ({ binder, isActive, onSelect, onEdit, onDuplicate, onDelete 
         </div>
         {progress !== null && (
           <div className="mt-2 ml-4 flex items-center gap-2">
-            <div className="flex-1 h-1 rounded-full bg-white/5 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-400 transition-[width] duration-500"
-                style={{ width: `${progress * 100}%` }}
-              />
-            </div>
+            <ProgressBar value={progress} className="flex-1 h-1" />
             <span className="text-[10px] tabular-nums text-slate-500 w-14 text-right">
               {owned}/{binder.setSize}
             </span>
