@@ -3,16 +3,22 @@ import { motion, AnimatePresence, useAnimate } from 'motion/react';
 import { Check, Plus, Minus, Sparkles } from 'lucide-react';
 import TiltCard from '../ui/TiltCard';
 
+// Images already shown once: no fade-in again when a page is remounted (e.g. after a page turn)
+const loadedImages = new Set();
+
 /** Card image with its own fade-in state (keyed by URL from the parent). */
 const CardImage = ({ src, alt }) => {
-  const [loaded, setLoaded] = useState(false);
+  const [loaded, setLoaded] = useState(() => loadedImages.has(src));
   return (
     <img
       src={src}
       alt={alt}
       loading="lazy"
       draggable={false}
-      onLoad={() => setLoaded(true)}
+      onLoad={() => {
+        loadedImages.add(src);
+        setLoaded(true);
+      }}
       className={`absolute inset-0 w-full h-full object-cover transition-[opacity,filter] duration-500 ${
         loaded ? 'opacity-100 blur-0' : 'opacity-0 blur-sm'
       }`}

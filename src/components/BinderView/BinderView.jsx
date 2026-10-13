@@ -37,7 +37,6 @@ const BinderView = ({
 }) => {
   const notify = useToast();
   const [currentPage, setCurrentPage] = useState(1);
-  const [direction, setDirection] = useState(1);
   const [highlight, setHighlight] = useState(null); // { cardNumber, token, kind: 'add'|'remove'|'locate' }
   const [celebrate, setCelebrate] = useState(null); // { page, token }
   const [pageHint, setPageHint] = useState(null); // { turns, forward, page, left, right }
@@ -84,11 +83,10 @@ const BinderView = ({
 
   const navigateTo = useCallback(
     (newPage) => {
-      setDirection(newPage >= currentPage ? 1 : -1);
       setCurrentPage(Math.max(1, newPage));
       setHighlight(null);
     },
-    [currentPage]
+    []
   );
 
   const stepPage = useCallback(
@@ -120,7 +118,6 @@ const BinderView = ({
     (cardNumber, kind = 'locate') => {
       const page = getPage(cardNumber, pockets);
       const forward = page >= currentPage;
-      setDirection(forward ? 1 : -1);
 
       // An open binder shows a spread (verso of a sheet + recto of the next one): every sheet
       // turned moves exactly one spread, whatever the view mode used on screen.
@@ -353,7 +350,6 @@ const BinderView = ({
             binder={binder}
             page={currentPage}
             spreadMode={spreadMode}
-            direction={direction}
             highlight={highlight}
             celebrate={celebrate}
             lastAddedCard={lastAddedCard}
