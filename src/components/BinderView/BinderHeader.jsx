@@ -1,4 +1,15 @@
-import { Menu as MenuIcon, Pencil, Download, RotateCcw, MoreHorizontal, Trash2, Copy, BookOpen, Square } from 'lucide-react';
+import {
+  Menu as MenuIcon,
+  Pencil,
+  Download,
+  RotateCcw,
+  MoreHorizontal,
+  Trash2,
+  Copy,
+  BookOpen,
+  Square,
+  ShoppingCart,
+} from 'lucide-react';
 import { motion } from 'motion/react';
 import Menu from '../ui/Menu';
 import AnimatedNumber from '../ui/AnimatedNumber';
@@ -26,6 +37,7 @@ const BinderHeader = ({
   onDelete,
   onExport,
   onResetExports,
+  onCardmarket,
 }) => {
   const game = getGame(binder.gameType);
   const { unique, copies, foils, owned, progress } = getBinderStats(binder);
@@ -110,6 +122,9 @@ const BinderHeader = ({
                 </span>
               }
               items={[
+                binder.gameType === 'lorcana'
+                  ? { label: 'Manquantes → Cardmarket', icon: ShoppingCart, onClick: onCardmarket }
+                  : null,
                 { label: 'Dupliquer (vide)', icon: Copy, onClick: onDuplicate },
                 binder.gameType === 'lorcana' && totalExported > 0
                   ? { label: "Réinitialiser l'export", icon: RotateCcw, onClick: onResetExports }

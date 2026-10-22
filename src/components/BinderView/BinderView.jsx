@@ -13,6 +13,7 @@ import { getDreambornExportRows, generateDreambornCsv, downloadCsv } from '../..
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { useToast } from '../ui/toastContext';
 import CardDetailModal from '../Modals/CardDetailModal';
+import CardmarketExportModal from '../Modals/CardmarketExportModal';
 import BinderHeader from './BinderHeader';
 import CardInputBar from './CardInputBar';
 import BinderSpread from './BinderSpread';
@@ -42,6 +43,7 @@ const BinderView = ({
   const [pageHint, setPageHint] = useState(null); // { turns, forward, page, left, right }
   const [lastAction, setLastAction] = useState(null);
   const [detailCard, setDetailCard] = useState(null);
+  const [cardmarketOpen, setCardmarketOpen] = useState(false);
   const highlightTimerRef = useRef(null);
   const hintTimerRef = useRef(null);
   const celebrateTimerRef = useRef(null);
@@ -289,6 +291,7 @@ const BinderView = ({
           onResetExports(binder.id);
           notify({ message: "Marques d'export réinitialisées" });
         }}
+        onCardmarket={() => setCardmarketOpen(true)}
       />
 
       <CardInputBar
@@ -383,6 +386,8 @@ const BinderView = ({
         onNavigate={handleDetailNavigate}
         onSetCounts={handleSetCounts}
       />
+
+      <CardmarketExportModal isOpen={cardmarketOpen} binder={binder} onClose={() => setCardmarketOpen(false)} />
     </div>
   );
 };
