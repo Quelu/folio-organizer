@@ -387,7 +387,13 @@ const BinderView = ({
         onSetCounts={handleSetCounts}
       />
 
-      <CardmarketExportModal isOpen={cardmarketOpen} binder={binder} onClose={() => setCardmarketOpen(false)} />
+      <CardmarketExportModal
+        isOpen={cardmarketOpen}
+        binder={binder}
+        excludedRarities={prefs.cardmarketExcludedRarities}
+        onExcludedRaritiesChange={(rarities) => onSetPref('cardmarketExcludedRarities', rarities)}
+        onClose={() => setCardmarketOpen(false)}
+      />
     </div>
   );
 };

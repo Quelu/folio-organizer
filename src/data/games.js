@@ -56,7 +56,19 @@ export const LORCANA_SETS = [
   { code: '14', name: 'Hyperia City', nameFr: 'Hyperia City' },
 ];
 
-const FR_NAMES = Object.fromEntries(LORCANA_SETS.map((s) => [s.code, s.nameFr]));
+/** Lorcana rarities as Lorcast names them, from the most common to the rarest. */
+export const LORCANA_RARITIES = [
+  { key: 'Common', label: 'Commune' },
+  { key: 'Uncommon', label: 'Peu commune' },
+  { key: 'Rare', label: 'Rare' },
+  { key: 'Super_rare', label: 'Super rare' },
+  { key: 'Legendary', label: 'Légendaire' },
+  { key: 'Epic', label: 'Épique' },
+  { key: 'Enchanted', label: 'Enchantée' },
+  { key: 'Iconic', label: 'Iconique' },
+];
+
+const FR_NAMES =Object.fromEntries(LORCANA_SETS.map((s) => [s.code, s.nameFr]));
 
 /** Merges a fetched set list with the built-in French names. */
 export const withFrenchNames = (sets) => sets.map((s) => ({ ...s, nameFr: FR_NAMES[s.code] ?? s.nameFr ?? null }));

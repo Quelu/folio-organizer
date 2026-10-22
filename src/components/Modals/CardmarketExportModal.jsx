@@ -4,8 +4,54 @@ import Modal from '../ui/Modal';
 import { useToast } from '../ui/toastContext';
 import { fetchLorcastSet } from '../../utils/lorcastApi';
 import { getCardmarketWants, splitWantsLists, CARDMARKET_MAX_ENTRIES } from '../../utils/cardmarketExport';
+import { LORCANA_RARITIES } from '../../data/games';
 
 const CARDMARKET_WANTS_URL = 'https://www.cardmarket.com/fr/Lorcana/Wants';
+
+/** Rarity toggles, each with the number of missing cards it holds. */
+const RarityFilter = ({ missing, excluded, onChange }) => {
+  const counts = new Map();
+  for (const line of missing) counts.set(line.rarity, (counts.get(line.rarity) ?? 0) + 1);
+  // Rarities Lorcast may add later still get a toggle, after the known ones
+  const rarities = [
+    ...LORCANA_RARITIES.filter((r) => counts.has(r.key)),
+    ...[...counts.keys()]
+      .filter((key) => !LORCANA_RARITIES.some((r) => r.key === key))
+      .map((key) => ({ key, label: key ?? 'Inconnue' })),
+  ];
+
+  const toggle = (key) => onChange(excluded.includes(key) ? excluded.filter((k) => k !== key) : [...excluded, key]);
+
+  return (
+    <div>
+      <span className="label">Raretés à acheter</span>
+      <div className="flex flex-wrap gap-2">
+        {rarities.map(({ key, label }) => {
+          const included = !excluded.includes(key);
+          return (
+            <button
+              key={key ?? 'unknown'}
+              type="button"
+              onClick={() => toggle(key)}
+              aria-pressed={included}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm ring-1 ring-inset transition-all ${
+                included
+                  ? 'bg-indigo-500/15 ring-indigo-400/60 text-white'
+                  : 'bg-white/[0.03] ring-white/10 text-slate-500 hover:text-slate-300 hover:bg-white/5'
+              }`}
+            >
+              <span className={included ? '' : 'line-through'}>{label}</span>
+              <span className={`text-xs font-semibold tabular-nums ${included ? 'text-indigo-300' : ''}`}>
+                {counts.get(key)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-xs text-slate-500 mt-2">Clique une rareté pour l'exclure, par exemple les Enchantées hors de prix.</p>
+    </div>
+  );
+};
 
 /** One block to paste in a Cardmarket wants list. */
 const WantsList = ({ lines, index, total }) => {
@@ -66,7 +112,7 @@ const WantsList = ({ lines, index, total }) => {
   );
 };
 
-const ExportBody = ({ binder }) => {
+const ExportBody = ({ binder, excludedRarities, onExcludedRaritiesChange }) => {
   const [set, setSet] = useState({ status: 'loading', data: null });
   const [attempt, setAttempt] = useState(0);
   const [withExpansion, setWithExpansion] = useState(true);
@@ -108,11 +154,12 @@ const ExportBody = ({ binder }) => {
     );
   }
 
-  const { lines, unknown, lastNumber } = getCardmarketWants(binder, set.data, withExpansion);
+  const { lines: missing, unknown, lastNumber } = getCardmarketWants(binder, set.data, withExpansion);
+  const lines = missing.filter((l) => !excludedRarities.includes(l.rarity));
   const lists = splitWantsLists(lines);
   const versioned = lines.filter((l) => l.version).length;
 
-  if (lines.length === 0 && unknown.length === 0) {
+  if (missing.length === 0 && unknown.length === 0) {
     return (
       <div className="px-6 pb-6 pt-3">
         <p className="text-sm text-slate-400">
@@ -126,9 +173,15 @@ const ExportBody = ({ binder }) => {
     <div className="px-6 pb-6 pt-2 space-y-5">
       <p className="text-sm text-slate-400 leading-relaxed">
         <b className="text-white">
-          {lines.length} carte{lines.length > 1 ? 's' : ''} manquante{lines.length > 1 ? 's' : ''}
+          {missing.length} carte{missing.length > 1 ? 's' : ''} manquante{missing.length > 1 ? 's' : ''}
         </b>{' '}
-        sur {lastNumber}, un exemplaire de chaque.
+        sur {lastNumber}
+        {lines.length < missing.length && (
+          <>
+            , <b className="text-white">{lines.length}</b> à acheter
+          </>
+        )}
+        , un exemplaire de chaque.
         {versioned > 0 && (
           <>
             {' '}
@@ -139,6 +192,10 @@ const ExportBody = ({ binder }) => {
           </>
         )}
       </p>
+
+      {missing.length > 0 && (
+        <RarityFilter missing={missing} excluded={excludedRarities} onChange={onExcludedRaritiesChange} />
+      )}
 
       {set.data.setName && (
         <label className="flex items-start gap-3 cursor-pointer select-none">
@@ -172,34 +229,45 @@ const ExportBody = ({ binder }) => {
         </p>
       )}
 
+      {lines.length === 0 && missing.length > 0 && (
+        <p className="text-sm text-slate-400">Toutes les cartes manquantes sont exclues par le filtre de raretés.</p>
+      )}
+
       <div className="space-y-5">
         {lists.map((list, i) => (
           <WantsList key={i} lines={list} index={i} total={lists.length} />
         ))}
       </div>
 
-      <div className="rounded-xl bg-white/[0.03] ring-1 ring-inset ring-white/5 p-4 text-xs text-slate-400 leading-relaxed">
-        Sur Cardmarket, crée une liste de wants, ouvre l'ajout d'une deck list, colle le bloc puis valide avec{' '}
-        <b className="text-slate-200">Add</b>.
-        <a
-          href={CARDMARKET_WANTS_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1.5 mt-2 text-indigo-300 hover:text-white font-semibold transition-colors w-fit"
-        >
-          Ouvrir mes wants Cardmarket
-          <ExternalLink size={13} />
-        </a>
-      </div>
+      {lines.length > 0 && (
+        <div className="rounded-xl bg-white/[0.03] ring-1 ring-inset ring-white/5 p-4 text-xs text-slate-400 leading-relaxed">
+          Sur Cardmarket, crée une liste de wants, ouvre l'ajout d'une deck list, colle le bloc puis valide avec{' '}
+          <b className="text-slate-200">Add</b>.
+          <a
+            href={CARDMARKET_WANTS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 mt-2 text-indigo-300 hover:text-white font-semibold transition-colors w-fit"
+          >
+            Ouvrir mes wants Cardmarket
+            <ExternalLink size={13} />
+          </a>
+        </div>
+      )}
     </div>
   );
 };
 
 /** Missing cards of a Lorcana binder as Cardmarket deck lists, to buy them from a wants list. */
-const CardmarketExportModal = ({ isOpen, binder, onClose }) => (
+const CardmarketExportModal = ({ isOpen, binder, excludedRarities, onExcludedRaritiesChange, onClose }) => (
   <Modal isOpen={isOpen} onClose={onClose} title="Cartes manquantes → Cardmarket" size="lg">
     {/* Keyed so the options reset when another binder is opened */}
-    <ExportBody key={binder.id} binder={binder} />
+    <ExportBody
+      key={binder.id}
+      binder={binder}
+      excludedRarities={excludedRarities}
+      onExcludedRaritiesChange={onExcludedRaritiesChange}
+    />
   </Modal>
 );
 

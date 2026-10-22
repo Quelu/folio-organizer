@@ -35,7 +35,7 @@ const setCache = new Map();
 /**
  * Fetches every card of a set from the Lorcast API (Enchanted, Epic and Iconic included).
  * @param {string} setCode - Lorcana set code (e.g. "1", "2", "3")
- * @returns {Promise<{ setName: string|null, cards: { number: string, name: string, version: string|null }[] }|null>}
+ * @returns {Promise<{ setName: string|null, cards: { number: string, name: string, version: string|null, rarity: string|null }[] }|null>}
  *   null on failure; collector numbers stay strings since a few carry a suffix ("4a", "65f")
  */
 export const fetchLorcastSet = (setCode) => {
@@ -44,7 +44,12 @@ export const fetchLorcastSet = (setCode) => {
       .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
       .then((cards) => ({
         setName: cards[0]?.set?.name ?? null,
-        cards: cards.map((c) => ({ number: c.collector_number, name: c.name, version: c.version ?? null })),
+        cards: cards.map((c) => ({
+          number: c.collector_number,
+          name: c.name,
+          version: c.version ?? null,
+          rarity: c.rarity ?? null,
+        })),
       }))
       .catch(() => {
         // Not cached so the next call retries

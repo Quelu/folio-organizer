@@ -16,9 +16,9 @@ const byCollectorNumber = (a, b) => baseNumber(a.number) - baseNumber(b.number) 
  * order. Without it a want matches any of them, so a missing common could come as its Enchanted.
  *
  * @param {object} binder
- * @param {{ setName: string|null, cards: { number: string, name: string, version: string|null }[] }} set
+ * @param {{ setName: string|null, cards: { number: string, name: string, version: string|null, rarity: string|null }[] }} set
  * @param {boolean} [withExpansion] restricts each want to the binder's set (reprints excluded)
- * @returns {{ lines: { cardNumber: number, text: string, version: number|null }[], unknown: number[], lastNumber: number }}
+ * @returns {{ lines: { cardNumber: number, text: string, version: number|null, rarity: string|null }[], unknown: number[], lastNumber: number }}
  *   unknown lists the missing numbers Lorcast has no card for
  */
 export const getCardmarketWants = (binder, set, withExpansion = true) => {
@@ -52,6 +52,7 @@ export const getCardmarketWants = (binder, set, withExpansion = true) => {
     lines.push({
       cardNumber: n,
       version,
+      rarity: card.rarity ?? null,
       text: `1 ${getCardmarketName(card)}${version ? ` (V.${version})` : ''}${expansion}`,
     });
   }
