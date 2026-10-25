@@ -1,6 +1,14 @@
 /** Cardmarket accepts at most 150 entries per wants list. */
 export const CARDMARKET_MAX_ENTRIES = 150;
 
+const SPECIAL_RARITIES = ['Epic', 'Enchanted', 'Iconic'];
+
+/**
+ * Filter key of the few cards with a regular rarity numbered after the Epic / Enchanted / Iconic
+ * ones (Yen Sid 223, Mulan 224… in Ursula's Return), so they can be left out like the specials.
+ */
+export const BONUS_RARITY = 'Bonus';
+
 const baseNumber = (number) => parseInt(number, 10);
 
 /** "Elsa - Spirit of Winter", or the name alone for cards without a version (songs, items…). */
@@ -10,6 +18,7 @@ const byCollectorNumber = (a, b) => baseNumber(a.number) - baseNumber(b.number) 
 
 /**
  * Builds the Cardmarket deck list of the cards missing from a Lorcana binder, one copy each.
+ * Covers the whole set even past the binder size, so Epic, Enchanted and Iconic cards can be bought too.
  *
  * Inside an expansion Cardmarket tells apart cards sharing a name with a version: (V.1) for the
  * regular card, (V.2), (V.3)… for its Enchanted / Epic / Iconic printings, in collector number
@@ -19,7 +28,7 @@ const byCollectorNumber = (a, b) => baseNumber(a.number) - baseNumber(b.number) 
  * @param {{ setName: string|null, cards: { number: string, name: string, version: string|null, rarity: string|null }[] }} set
  * @param {boolean} [withExpansion] restricts each want to the binder's set (reprints excluded)
  * @returns {{ lines: { cardNumber: number, text: string, version: number|null, rarity: string|null }[], unknown: number[], lastNumber: number }}
- *   unknown lists the missing numbers Lorcast has no card for
+ *   rarity is BONUS_RARITY for bonus cards; unknown lists the missing numbers Lorcast has no card for
  */
 export const getCardmarketWants = (binder, set, withExpansion = true) => {
   const groups = new Map();
@@ -31,7 +40,10 @@ export const getCardmarketWants = (binder, set, withExpansion = true) => {
     byNumber.set(n, [...(byNumber.get(n) ?? []), card]);
   }
 
-  const lastNumber = binder.setSize ?? Math.max(0, ...byNumber.keys());
+  const lastNumber = Math.max(binder.setSize ?? 0, ...byNumber.keys());
+  const firstSpecial = Math.min(
+    ...set.cards.filter((c) => SPECIAL_RARITIES.includes(c.rarity)).map((c) => baseNumber(c.number))
+  );
   const expansion = withExpansion && set.setName ? ` (${set.setName})` : '';
   const lines = [];
   const unknown = [];
@@ -52,7 +64,7 @@ export const getCardmarketWants = (binder, set, withExpansion = true) => {
     lines.push({
       cardNumber: n,
       version,
-      rarity: card.rarity ?? null,
+      rarity: n > firstSpecial && !SPECIAL_RARITIES.includes(card.rarity) ? BONUS_RARITY : (card.rarity ?? null),
       text: `1 ${getCardmarketName(card)}${version ? ` (V.${version})` : ''}${expansion}`,
     });
   }

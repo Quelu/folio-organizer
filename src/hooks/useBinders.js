@@ -11,7 +11,7 @@ const DEFAULT_STATE = {
   activeBinderId: null,
   addHistory: [],
   // Rarities left out of Cardmarket wants: the alternate-art printings cost far more than the set's cards
-  prefs: { viewMode: 'spread', cardmarketExcludedRarities: ['Epic', 'Enchanted', 'Iconic'] },
+  prefs: { viewMode: 'spread', cardmarketExcludedRarities: ['Epic', 'Enchanted', 'Iconic', 'Bonus'] },
 };
 
 /** Fills in fields added after the first version so older saved states keep working. */

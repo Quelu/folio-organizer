@@ -3,10 +3,17 @@ import { Copy, Check, ExternalLink, AlertTriangle, Loader2, RotateCcw } from 'lu
 import Modal from '../ui/Modal';
 import { useToast } from '../ui/toastContext';
 import { fetchLorcastSet } from '../../utils/lorcastApi';
-import { getCardmarketWants, splitWantsLists, CARDMARKET_MAX_ENTRIES } from '../../utils/cardmarketExport';
+import {
+  getCardmarketWants,
+  splitWantsLists,
+  CARDMARKET_MAX_ENTRIES,
+  BONUS_RARITY,
+} from '../../utils/cardmarketExport';
 import { LORCANA_RARITIES } from '../../data/games';
 
 const CARDMARKET_WANTS_URL = 'https://www.cardmarket.com/fr/Lorcana/Wants';
+
+const FILTERS = [...LORCANA_RARITIES, { key: BONUS_RARITY, label: 'Hors série' }];
 
 /** Rarity toggles, each with the number of missing cards it holds. */
 const RarityFilter = ({ missing, excluded, onChange }) => {
@@ -14,11 +21,12 @@ const RarityFilter = ({ missing, excluded, onChange }) => {
   for (const line of missing) counts.set(line.rarity, (counts.get(line.rarity) ?? 0) + 1);
   // Rarities Lorcast may add later still get a toggle, after the known ones
   const rarities = [
-    ...LORCANA_RARITIES.filter((r) => counts.has(r.key)),
+    ...FILTERS.filter((r) => counts.has(r.key)),
     ...[...counts.keys()]
-      .filter((key) => !LORCANA_RARITIES.some((r) => r.key === key))
+      .filter((key) => !FILTERS.some((r) => r.key === key))
       .map((key) => ({ key, label: key ?? 'Inconnue' })),
   ];
+  const bonusNumbers = missing.filter((l) => l.rarity === BONUS_RARITY).map((l) => l.cardNumber);
 
   const toggle = (key) => onChange(excluded.includes(key) ? excluded.filter((k) => k !== key) : [...excluded, key]);
 
@@ -48,7 +56,15 @@ const RarityFilter = ({ missing, excluded, onChange }) => {
           );
         })}
       </div>
-      <p className="text-xs text-slate-500 mt-2">Clique une rareté pour l'exclure, par exemple les Enchantées hors de prix.</p>
+      <p className="text-xs text-slate-500 mt-2">
+        Clique une rareté pour l'exclure, par exemple les Enchantées hors de prix.
+        {bonusNumbers.length > 0 && (
+          <>
+            {' '}
+            Hors série : cartes numérotées après les versions spéciales (n° {bonusNumbers.join(', ')}).
+          </>
+        )}
+      </p>
     </div>
   );
 };
