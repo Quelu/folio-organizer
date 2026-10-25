@@ -80,4 +80,4 @@ Les prix viennent de Lorcast (TCGplayer, en dollars) : c'est un ordre de grandeu
 
 ## Cache
 
-Le catalogue Lorcast (un chapitre à la fois) et les textes français de LorcanaJSON sont téléchargés au premier lancement, puis gardés deux jours dans `~/.cache/folio-mcp/catalog.json`. Hors ligne, le serveur utilise le dernier catalogue en cache.
+Le catalogue Lorcast (un chapitre à la fois) et les textes français de LorcanaJSON sont téléchargés au premier lancement, puis gardés deux jours dans `~/.cache/folio-mcp/catalog.json`. Les légalités Core / Infinity et la rotation viennent aussi de LorcanaJSON, à jour dès la sortie d'un chapitre. Pour récupérer un nouveau chapitre sans attendre, supprime ce fichier : il est retéléchargé à la question suivante. Hors ligne, le serveur utilise le dernier catalogue en cache.

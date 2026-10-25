@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { Plus, Search, Download, Upload, Library, X, Layers, BarChart3, ArrowLeftRight, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence, LayoutGroup } from 'motion/react';
 import BinderItem from './BinderItem';
+import CatalogStatus from './CatalogStatus';
 
 const NAV_ITEMS = [
   { kind: 'decks', label: 'Decks', icon: Layers },
@@ -143,7 +144,10 @@ const SidebarContent = ({
         )}
       </nav>
 
-      <div className="px-4 pt-3 border-t border-white/5 flex items-center justify-between gap-3">
+      <div className="border-t border-white/5">
+        <CatalogStatus />
+      </div>
+      <div className="px-4 pt-2.5 flex items-center justify-between gap-3">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">Langue des cartes</span>
         <div className="flex items-center rounded-lg ring-1 ring-inset ring-white/10 p-0.5" role="group" aria-label="Langue des cartes">
           {[

@@ -70,8 +70,13 @@ export const LORCANA_RARITIES = [
 
 const FR_NAMES =Object.fromEntries(LORCANA_SETS.map((s) => [s.code, s.nameFr]));
 
-/** Merges a fetched set list with the built-in French names. */
-export const withFrenchNames = (sets) => sets.map((s) => ({ ...s, nameFr: FR_NAMES[s.code] ?? s.nameFr ?? null }));
+// French names of chapters released after the list above, from LorcanaJSON (see CatalogProvider)
+const laterFrenchNames = {};
+export const addFrenchSetNames = (names) => Object.assign(laterFrenchNames, names);
+const getFrenchName = (code) => FR_NAMES[code] ?? laterFrenchNames[code] ?? null;
+
+/** Merges a fetched set list with the known French names. */
+export const withFrenchNames = (sets) => sets.map((s) => ({ ...s, nameFr: getFrenchName(s.code) ?? s.nameFr ?? null }));
 
 let knownSets = LORCANA_SETS;
 export const setKnownLorcanaSets = (sets) => {
@@ -81,7 +86,7 @@ export const setKnownLorcanaSets = (sets) => {
 /** French name when known, English otherwise. */
 export const getLorcanaSetName = (code) => {
   const set = knownSets.find((s) => s.code === code) ?? LORCANA_SETS.find((s) => s.code === code);
-  return set ? (set.nameFr ?? set.name) : null;
+  return getFrenchName(code) ?? (set ? (set.nameFr ?? set.name) : null);
 };
 
 export const GRID_PRESETS = [

@@ -177,8 +177,7 @@ const DecksView = ({ onOpenSidebar, onLocate }) => {
                 >
                   <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
                   <span>
-                    <b>{d.name}</b> : {analyses.get(d.id).rotating.length} carte(s) légale(s) en Core uniquement via le chapitre{' '}
-                    {analyses.get(d.id).coreSets[0]}, le premier à sortir à la prochaine rotation.
+                    <b>{d.name}</b> : {analyses.get(d.id).warnings.find((w) => w.code === 'rotation')?.message}
                   </span>
                 </button>
               ))}

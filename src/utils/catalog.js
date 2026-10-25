@@ -95,12 +95,38 @@ const byNumber = (a, b) => baseNumber(a.number) - baseNumber(b.number) || a.numb
 const findLocalized = (cards, card) => cards?.[card.id] ?? cards?.[`${card.set}-${baseNumber(card.number)}`] ?? null;
 
 /**
+ * Core rotation from LorcanaJSON's chapters: the Core-legal ones by rotation group, oldest group
+ * first. next: the chapters leaving Core together at the next rotation, with its date when known.
+ * @returns {{ groups: { group: number, sets: string[] }[], next: { sets: string[], date: string|null } } | null}
+ */
+const buildRotation = (chapters) => {
+  const legal = Object.values(chapters ?? {}).filter((c) => c.core && c.rotationGroup != null);
+  if (legal.length === 0) return null;
+  const groups = [...new Set(legal.map((c) => c.rotationGroup))]
+    .sort((a, b) => a - b)
+    .map((group) => ({
+      group,
+      sets: legal
+        .filter((c) => c.rotationGroup === group)
+        .map((c) => c.code)
+        .sort((a, b) => Number(a) - Number(b)),
+    }));
+  const nextSets = groups[0].sets;
+  const date = legal.find((c) => nextSets.includes(c.code) && c.coreUntil)?.coreUntil ?? null;
+  return { groups, next: { sets: nextSets, date } };
+};
+
+/**
  * Indexes the cards of several sets.
  * @param {{ [setCode: string]: object[] }} cardsBySet slim cards per set
- * @param {{ fr?: object, en?: object }} [localized] LorcanaJSON cards by id and language
- *   (src/utils/lorcanaJson.js): names, texts, official pictures and foil masks
+ * @param {{ fr?: object, en?: object }} [localized] LorcanaJSON data by language, as built by
+ *   buildLocalizedCards (src/utils/lorcanaJson.js): names, texts, official pictures, foil masks,
+ *   up-to-date legalities and the chapters' rotation groups
  */
 export const buildCatalogIndex = (cardsBySet, localized = {}) => {
+  const frCards = localized.fr?.cards;
+  const enCards = localized.en?.cards;
+  const chapters = localized.fr?.sets ?? localized.en?.sets ?? null;
   const byId = new Map();
   const byKey = new Map();
   const byFrenchKey = new Map();
@@ -109,10 +135,12 @@ export const buildCatalogIndex = (cardsBySet, localized = {}) => {
   const sets = Object.keys(cardsBySet).sort((a, b) => Number(a) - Number(b));
   for (const set of sets) {
     const cards = [...cardsBySet[set]].sort(byNumber).map((base) => {
-      const fr = findLocalized(localized.fr, base);
-      const en = findLocalized(localized.en, base);
+      const fr = findLocalized(frCards, base);
+      const en = findLocalized(enCards, base);
       return {
         ...base,
+        // The official app knows a new chapter is legal from its release, Lorcast catches up later
+        legal: fr?.legal ?? en?.legal ?? base.legal,
         l10n: { fr, en },
         cardmarketId: fr?.cardmarketId ?? en?.cardmarketId ?? null,
         // Searched in both languages, so French and English names, classes and texts all match
@@ -131,7 +159,7 @@ export const buildCatalogIndex = (cardsBySet, localized = {}) => {
       if (card.l10n.fr) byFrenchKey.set(normalizeName(card.l10n.fr.fullName), card.key);
     }
   }
-  return { byId, byKey, byFrenchKey, bySet, all, sets };
+  return { byId, byKey, byFrenchKey, bySet, all, sets, chapters, rotation: buildRotation(chapters) };
 };
 
 /**

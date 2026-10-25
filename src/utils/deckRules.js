@@ -24,6 +24,18 @@ export const MAX_VERSIONS = 15;
 
 export const getDeckSize = (deck) => deck.cards.reduce((s, c) => s + c.qty, 0);
 
+/** "chapitre 9", "chapitres 9 à 12", "chapitres 9, 11 et 12" */
+export const describeChapters = (codes) => {
+  if (codes.length === 1) return `chapitre ${codes[0]}`;
+  const numbers = codes.map(Number);
+  const contiguous = numbers.every((n, i) => i === 0 || n === numbers[i - 1] + 1);
+  return contiguous
+    ? `chapitres ${codes[0]} à ${codes.at(-1)}`
+    : `chapitres ${codes.slice(0, -1).join(', ')} et ${codes.at(-1)}`;
+};
+
+const formatDate = (date) => new Date(date).toLocaleDateString('fr-BE', { day: 'numeric', month: 'long', year: 'numeric' });
+
 /** Most copies allowed: 4, unless the card says otherwise ("You may have up to 99 copies…"). */
 export const getMaxCopies = (card) => {
   const match = card?.text?.match(/up to (\d+) copies/i);
@@ -76,9 +88,12 @@ export const analyzeDeck = (deck, index, collection = null, lang = 'en') => {
     errors.push({ code: 'inks', message: `${inks.length} encres (${inks.join(', ')}) : ${MAX_INKS} maximum.` });
   }
 
-  // Legality in each format, and Core cards only kept legal by the oldest Core chapter
+  // Legality in each format, and Core cards only kept legal by the chapters leaving at the next
+  // rotation: its group from the official data, else the oldest Core chapter
   const legality = {};
   const coreSets = index ? getCoreSets(index) : [];
+  const rotationSets = index?.rotation?.next.sets ?? (coreSets.length > 1 ? [coreSets[0]] : []);
+  const rotationDate = index?.rotation?.next.date ?? null;
   const rotating = [];
   if (index) {
     for (const { key: format } of FORMATS) {
@@ -86,11 +101,12 @@ export const analyzeDeck = (deck, index, collection = null, lang = 'en') => {
         .map((e) => ({ entry: e, status: getLegality(index, e.key, format) }))
         .filter((x) => x.status && x.status !== 'legal');
     }
-    if (coreSets.length > 1) {
-      const oldest = coreSets[0];
+    // Only when another group stays in Core: otherwise every card would be flagged
+    if (rotationSets.length && coreSets.some((s) => !rotationSets.includes(s))) {
       for (const e of entries) {
-        const legalSets = (index.byKey.get(e.key) ?? []).filter((c) => c.legal.core === 'legal').map((c) => c.set);
-        if (legalSets.length && legalSets.every((s) => s === oldest)) rotating.push(e);
+        // Chapters in Core printing the card (an old printing stays playable through its reprint)
+        const coreChapters = (index.byKey.get(e.key) ?? []).map((c) => c.set).filter((set) => coreSets.includes(set));
+        if (coreChapters.length && coreChapters.every((set) => rotationSets.includes(set))) rotating.push(e);
       }
     }
     const illegal = legality[deck.format] ?? [];
@@ -102,9 +118,12 @@ export const analyzeDeck = (deck, index, collection = null, lang = 'en') => {
       });
     }
     if (deck.format === 'core' && rotating.length) {
+      const plural = rotating.length > 1 ? 's' : '';
+      const several = rotationSets.length > 1;
+      const when = rotationDate ? ` (le ${formatDate(rotationDate)})` : '';
       warnings.push({
         code: 'rotation',
-        message: `${rotating.length} carte${rotating.length > 1 ? 's' : ''} légale${rotating.length > 1 ? 's' : ''} en Core uniquement via le chapitre ${coreSets[0]}, le premier concerné à la prochaine rotation.`,
+        message: `${rotating.length} carte${plural} légale${plural} en Core uniquement via ${several ? 'les' : 'le'} ${describeChapters(rotationSets)}, qui ${several ? 'quitteront' : 'quittera'} le Core à la prochaine rotation${when}.`,
         keys: rotating.map((e) => e.key),
       });
     }
@@ -135,6 +154,8 @@ export const analyzeDeck = (deck, index, collection = null, lang = 'en') => {
     warnings,
     legality,
     rotating,
+    rotationSets,
+    rotationDate,
     coreSets,
     owned,
     ownedRatio: total ? owned / total : 0,

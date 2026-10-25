@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import Modal from '../ui/Modal';
-import { GAMES, GRID_PRESETS, getGame } from '../../data/games';
+import { GAMES, GRID_PRESETS, getGame, getLorcanaSetName } from '../../data/games';
 import { useLorcanaSets } from '../../hooks/useLorcanaSets';
 
 const toForm = (binder) =>
@@ -112,12 +112,15 @@ const FormBody = ({ binder, onClose, onSubmit }) => {
               onChange={(e) => update({ setCode: e.target.value })}
               className="field"
             >
-              {[...lorcanaSets].reverse().map((s) => (
-                <option key={s.code} value={s.code}>
-                  {s.code} — {s.nameFr ?? s.name}
-                  {s.nameFr && s.nameFr !== s.name ? ` (${s.name})` : ''}
-                </option>
-              ))}
+              {[...lorcanaSets].reverse().map((s) => {
+                const nameFr = getLorcanaSetName(s.code);
+                return (
+                  <option key={s.code} value={s.code}>
+                    {s.code} — {nameFr ?? s.name}
+                    {nameFr && nameFr !== s.name ? ` (${s.name})` : ''}
+                  </option>
+                );
+              })}
             </select>
           </motion.div>
         )}

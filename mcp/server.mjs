@@ -143,8 +143,9 @@ const readCatalogCache = async () => {
 /** Every numbered Lorcana chapter from Lorcast, fetched one set at a time and cached on disk. */
 const fetchCatalog = async () => {
   const cached = await readCatalogCache();
-  // Caches from before the French texts (no fr field) are refreshed once
-  if (cached && Date.now() - cached.at < CATALOG_MAX_AGE && cached.fr !== undefined) return indexFromCache(cached);
+  // Caches from before the French data ({ cards, sets }, or null when unavailable) are refreshed once
+  const frenchReady = cached && (cached.fr === null || cached.fr?.cards);
+  if (frenchReady && Date.now() - cached.at < CATALOG_MAX_AGE) return indexFromCache(cached);
   try {
     const sets = ((await fetchJson(`${LORCAST}/sets`)).results ?? [])
       .filter((s) => /^\d+$/.test(s.code))
