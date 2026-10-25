@@ -30,7 +30,7 @@ import {
   localizeCard,
 } from '../src/utils/catalog.js';
 import { buildLocalizedCards } from '../src/utils/lorcanaJson.js';
-import { buildCollection, getPullList, getSharedCopyConflicts, getDeckUsage, getPulledCount } from '../src/utils/collection.js';
+import { buildCollection, getPullList, getCopyAllocation, getDeckUsage, getPulledCount } from '../src/utils/collection.js';
 import { analyzeDeck, parseDeckList, formatDeckList } from '../src/utils/deckRules.js';
 import { getBinderStats, getLocation } from '../src/utils/calculations.js';
 import { getGame, getLorcanaSetName, setKnownLorcanaSets, withFrenchNames, LORCANA_RARITIES } from '../src/data/games.js';
@@ -94,6 +94,7 @@ const loadBackup = async () => {
       binders: data.binders.map((b) => ({ setSize: getGame(b.gameType).defaultSetSize, gridRows: 3, gridCols: 3, cards: {}, ...b })),
       decks: data.decks ?? [],
       pulls: data.pulls ?? [],
+      allocations: data.allocations ?? {},
       prefs: data.prefs ?? {},
       exportedAt: data.exportedAt ?? null,
     },
@@ -184,8 +185,10 @@ const loadCatalog = () => {
 /** Backup + catalog + owned cards, rebuilt on each call (cheap, and always matches the newest save). */
 const getContext = async () => {
   const [backup, index] = await Promise.all([loadBackup(), loadCatalog()]);
-  const { binders, pulls } = backup.data;
-  return { ...backup.data, file: backup.file, index, collection: buildCollection(binders, index, pulls) };
+  const { binders, pulls, decks, allocations } = backup.data;
+  const collection = buildCollection(binders, index, pulls);
+  // Copies split between decks in the app: each deck counts its own and the shared ones
+  return { ...backup.data, file: backup.file, index, collection, allocation: getCopyAllocation(decks, collection, allocations) };
 };
 
 // ---------------------------------------------------------------------------
@@ -441,7 +444,7 @@ tool(
     annotations: { readOnlyHint: true },
   },
   async () => {
-    const { index, collection, decks, binders } = await getContext();
+    const { index, collection, decks, binders, allocation } = await getContext();
     const entries = [...collection.entries.values()];
     const count = (keyOf) => {
       const map = new Map();
@@ -472,7 +475,7 @@ tool(
       })
       .filter(Boolean);
 
-    const conflicts = getSharedCopyConflicts(decks, collection);
+    const conflicts = allocation.shared.filter((c) => c.contested);
     const lorcanaBinders = binders.filter((b) => b.gameType === 'lorcana');
     return [
       `${plural(entries.length, 'carte unique', 'cartes uniques')}, ${plural(entries.reduce((s, e) => s + e.total, 0), 'exemplaire')} (${plural(entries.reduce((s, e) => s + e.foil, 0), 'foil')}) dans ${lorcanaBinders.length} farde(s) Lorcana.`,
@@ -486,7 +489,7 @@ tool(
       ...(collection.unknown.length ? [`${collection.unknown.length} emplacement(s) sans carte correspondante dans le catalogue.`] : []),
       ...(conflicts.length
         ? [
-            'Cartes partagées par plusieurs decks avec trop peu d’exemplaires :',
+            'Cartes partagées par plusieurs decks avec trop peu d’exemplaires, pas encore réparties :',
             ...conflicts.map((c) => `- ${c.name} : ${c.owned} possédée(s), ${c.needed} utilisées (${c.decks.map((u) => `« ${u.deck.name} » ×${u.qty}`).join(', ')})`),
           ]
         : []),
@@ -546,11 +549,11 @@ tool(
     annotations: { readOnlyHint: true },
   },
   async () => {
-    const { decks, index, collection } = await getContext();
+    const { decks, index, collection, allocation } = await getContext();
     if (!decks.length) return 'Aucun deck dans la sauvegarde.';
     return decks
       .map((deck) => {
-        const a = analyzeDeck(deck, index, collection);
+        const a = analyzeDeck(deck, index, collection, 'fr', allocation.availableFor);
         return `- « ${deck.name} » (id ${deck.id}) · ${deck.kind === 'reference' ? 'référence' : 'mon deck'} · ${deck.format === 'infinity' ? 'Infinity' : 'Core'} · ${a.total} cartes · ${a.inks.map(inkLabel).join(' / ') || '—'} · ${a.valid ? 'valide' : `${a.errors.length} erreur(s)`} · possédé ${pct(a.ownedRatio)}`;
       })
       .join('\n');
@@ -566,12 +569,12 @@ tool(
     annotations: { readOnlyHint: true },
   },
   async ({ deck: query }) => {
-    const { decks, index, collection, pulls } = await getContext();
+    const { decks, index, collection, pulls, allocation } = await getContext();
     const deck = findDeck(decks, query);
-    const a = analyzeDeck(deck, index, collection);
+    const a = analyzeDeck(deck, index, collection, 'fr', allocation.availableFor);
     const pulledFor = (key) =>
       (collection.entries.get(key)?.copies ?? []).reduce((s, c) => s + getPulledCount(pulls, c.binder.id, c.cardNumber, deck.id), 0);
-    const conflicts = getSharedCopyConflicts(decks, collection).filter((c) => c.decks.some((u) => u.deck.id === deck.id));
+    const shared = allocation.shared.filter((c) => c.decks.some((u) => u.deck.id === deck.id));
     return [
       `« ${deck.name} » · ${deck.kind === 'reference' ? 'deck de référence' : 'mon deck'} · format ${deck.format === 'infinity' ? 'Infinity' : 'Core'}${deck.sourceUrl ? ` · source ${deck.sourceUrl}` : ''}`,
       formatAnalysisHeader(a),
@@ -581,10 +584,18 @@ tool(
         const card = e.card;
         const info = card ? ` (${card.cost}${card.inkwell ? '⬡' : ''} ${card.inks.map(inkLabel).join('/')})` : ' (hors catalogue)';
         const pulled = pulledFor(e.key);
-        return `  ${e.qty} × ${card ? cite(card) : e.name}${info} — possédées ${e.owned}${e.missing ? `, manquantes ${e.missing}` : ''}${pulled ? `, ${pulled} sortie(s) pour ce deck` : ''}`;
+        return `  ${e.qty} × ${card ? cite(card) : e.name}${info} — possédées ${e.owned}${e.reserved ? ` (+${e.reserved} réservée(s) pour un autre deck)` : ''}${e.missing ? `, manquantes ${e.missing}` : ''}${pulled ? `, ${pulled} sortie(s) pour ce deck` : ''}`;
       }),
-      ...(conflicts.length
-        ? ['Partagées avec d’autres decks sans assez d’exemplaires :', ...conflicts.map((c) => `  - ${c.name} : ${c.owned} possédée(s) pour ${c.needed} utilisées`)]
+      ...(shared.length
+        ? [
+            'Partagées avec d’autres decks sans assez d’exemplaires :',
+            ...shared.map(
+              (c) =>
+                `  - ${c.name} : ${c.owned} possédée(s) pour ${c.needed} utilisées · ${c.contested ? 'pas encore réparties' : 'réparties'} (${c.decks
+                  .map((u) => `« ${u.deck.name} » ${u.assigned} réservée(s), manque ${u.missing}`)
+                  .join(' ; ')})`
+            ),
+          ]
         : []),
       ...(deck.notes ? [`Notes : ${deck.notes}`] : []),
       'Liste à importer :',
@@ -641,9 +652,9 @@ tool(
     annotations: { readOnlyHint: true },
   },
   async ({ deck: query }) => {
-    const { decks, collection, pulls, binders } = await getContext();
+    const { decks, collection, pulls, binders, allocation } = await getContext();
     const deck = findDeck(decks, query);
-    const { rows, short } = getPullList(deck, collection, pulls, binders);
+    const { rows, short } = getPullList(deck, collection, pulls, binders, allocation.availableFor);
     const lines = [];
     let currentBinder = null;
     for (const row of rows) {

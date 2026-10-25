@@ -8,6 +8,7 @@ import { getPullList } from '../../utils/collection';
 import { findPocketCard } from '../../utils/catalog';
 import { useCatalog } from '../../hooks/catalogContext';
 import { useCardLang } from '../../hooks/useCardLang';
+import { useCopyAllocation } from '../../hooks/useCopyAllocation';
 
 /** "Page 3 · feuille 2 recto · rangée 1, col. 2" */
 const describeLocation = (loc) =>
@@ -23,7 +24,11 @@ const PullList = ({ deck, onLocate }) => {
   const { index } = useCatalog();
   const cardLang = useCardLang();
   const collection = useCollection();
-  const { rows, short } = useMemo(() => getPullList(deck, collection, pulls, binders), [deck, collection, pulls, binders]);
+  const { availableFor } = useCopyAllocation();
+  const { rows, short } = useMemo(
+    () => getPullList(deck, collection, pulls, binders, availableFor),
+    [deck, collection, pulls, binders, availableFor]
+  );
 
   const groups = [];
   for (const row of rows) {

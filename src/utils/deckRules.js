@@ -51,13 +51,17 @@ export const getEntryCard = (index, entry) => (index ? (index.byId.get(entry.id)
  * @param {object|null} index catalog index (rules needing card data are skipped without it)
  * @param {object|null} collection from buildCollection, for owned / missing counts
  * @param {'fr'|'en'} [lang] language of the card names in the messages
+ * @param {Function|null} [availableFor] (deckId, key) => copies this deck can use, when copies
+ *   are split between decks (getCopyAllocation); all owned copies otherwise
  */
-export const analyzeDeck = (deck, index, collection = null, lang = 'en') => {
+export const analyzeDeck = (deck, index, collection = null, lang = 'en', availableFor = null) => {
   const nameOf = (e) => (e.card ? localizeCard(e.card, lang).fullName : e.name);
   const entries = deck.cards.map((entry) => {
     const card = getEntryCard(index, entry);
-    const owned = collection ? getOwned(collection, entry.key) : 0;
-    return { ...entry, card, owned, missing: Math.max(0, entry.qty - owned) };
+    const ownedTotal = collection ? getOwned(collection, entry.key) : 0;
+    const owned = availableFor ? Math.max(0, availableFor(deck.id, entry.key)) : ownedTotal;
+    // reserved: copies owned but assigned to another deck
+    return { ...entry, card, owned, ownedTotal, reserved: ownedTotal - owned, missing: Math.max(0, entry.qty - owned) };
   });
   const total = entries.reduce((s, e) => s + e.qty, 0);
   const errors = [];

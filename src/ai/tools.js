@@ -1,5 +1,6 @@
 import { formatCardLine, matchesQuery, getMainPrinting, getLegality, normalizeName, FORMATS } from '../utils/catalog';
 import { analyzeDeck } from '../utils/deckRules';
+import { getCopyAllocation } from '../utils/collection';
 import { getTradeableSurplus, suggestTrades } from '../utils/trades';
 
 /** Client-side tools: the browser runs them on the local catalog and collection. */
@@ -111,7 +112,9 @@ export const resolveProposedCards = (input, index) => {
  * Builds the function that runs a tool call against the user's data.
  * @returns {(name: string, input: object) => string} text result; throws on invalid input
  */
-export const createToolRunner = ({ index, collection, decks, prices, tradeKeep }) => {
+export const createToolRunner = ({ index, collection, decks, allocations = {}, prices, tradeKeep }) => {
+  // Copies the user split between decks: each deck only counts its own and the shared ones
+  const { availableFor, shared } = getCopyAllocation(decks, collection, allocations);
   const owned = (card) => {
     const entry = collection.entries.get(card.key);
     return entry ? ` | possédée ×${entry.total}${entry.foil ? ` (${entry.foil} foil)` : ''}` : ' | non possédée';
@@ -168,10 +171,14 @@ export const createToolRunner = ({ index, collection, decks, prices, tradeKeep }
     get_deck: (input) => {
       const deck = decks.find((d) => d.id === input.deck_id);
       if (!deck) return `Deck ${input.deck_id} introuvable.`;
-      const a = analyzeDeck(deck, index, collection);
+      const a = analyzeDeck(deck, index, collection, 'en', availableFor);
       const lines = a.entries.map(
-        (e) => `${e.qty} ${e.name} [${e.card?.id ?? '?'}]${e.missing ? ` — manque ${e.missing}` : ''}`
+        (e) =>
+          `${e.qty} ${e.name} [${e.card?.id ?? '?'}]${e.missing ? ` — manque ${e.missing}` : ''}${
+            e.reserved ? ` (${e.reserved} réservée(s) pour un autre deck)` : ''
+          }`
       );
+      const disputed = shared.filter((s) => s.contested && s.decks.some((d) => d.deck.id === deck.id));
       return [
         `${deck.name} (${deck.format}, ${a.total} cartes, encres ${a.inks.join('/') || '—'})`,
         deck.notes ? `Notes : ${deck.notes}` : null,
@@ -179,6 +186,11 @@ export const createToolRunner = ({ index, collection, decks, prices, tradeKeep }
         ...a.errors.map((e) => `ERREUR : ${e.message}`),
         ...a.warnings.map((w) => `Attention : ${w.message}`),
         `Possédé : ${a.owned}/${a.total}`,
+        disputed.length
+          ? `Partagées avec d'autres decks, pas encore réparties : ${disputed
+              .map((s) => `${s.name} (${s.owned} pour ${s.decks.map((d) => `${d.qty} dans ${d.deck.name}`).join(', ')})`)
+              .join(' ; ')}`
+          : null,
         ...lines,
       ]
         .filter(Boolean)

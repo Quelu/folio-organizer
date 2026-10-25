@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, ClipboardPaste, AlertTriangle, AlertCircle, CheckCircle2, Layers, BookMarked, Menu as MenuIcon, Loader2 } from 'lucide-react';
+import { Plus, ClipboardPaste, AlertTriangle, AlertCircle, CheckCircle2, Layers, BookMarked, Menu as MenuIcon, Loader2, Split, ChevronRight } from 'lucide-react';
 import ProgressBar from '../ui/ProgressBar';
 import ConfirmDialog from '../ui/ConfirmDialog';
 import DeckEditor from './DeckEditor';
@@ -11,10 +11,11 @@ import { useCardLang } from '../../hooks/useCardLang';
 import { useCollection } from '../../hooks/useCollection';
 import { useToast } from '../ui/toastContext';
 import { analyzeDeck } from '../../utils/deckRules';
-import { getSharedCopyConflicts } from '../../utils/collection';
+import { useCopyAllocation } from '../../hooks/useCopyAllocation';
+import SharedCardsPanel from './SharedCardsPanel';
 import { getInk } from '../../utils/catalog';
 
-const DeckTile = ({ deck, analysis, onOpen }) => (
+const DeckTile = ({ deck, analysis, contested, onOpen }) => (
   <motion.button
     layout
     initial={{ opacity: 0, y: 12 }}
@@ -28,7 +29,17 @@ const DeckTile = ({ deck, analysis, onOpen }) => (
       {analysis.inks.map((ink) => (
         <span key={ink} className="w-3 h-3 rounded-full ring-2 ring-slate-950" style={{ background: getInk(ink).color }} title={getInk(ink).label} />
       ))}
-      <span className="ml-auto text-[10px] uppercase tracking-wider text-slate-500">{deck.format === 'core' ? 'Core' : 'Infinity'}</span>
+      {contested > 0 && (
+        <span
+          className="ml-auto flex items-center gap-1 px-1.5 py-px rounded-full text-[10px] font-bold bg-amber-400/15 text-amber-300 ring-1 ring-inset ring-amber-400/30"
+          title="Cartes partagées avec un autre deck, à répartir"
+        >
+          <Split size={10} /> {contested}
+        </span>
+      )}
+      <span className={`${contested > 0 ? '' : 'ml-auto '}text-[10px] uppercase tracking-wider text-slate-500`}>
+        {deck.format === 'core' ? 'Core' : 'Infinity'}
+      </span>
     </div>
     <div className="font-semibold text-white truncate">{deck.name}</div>
     <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5">
@@ -67,11 +78,14 @@ const DecksView = ({ onOpenSidebar, onLocate }) => {
   const [importOpen, setImportOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
 
+  const allocation = useCopyAllocation();
   const analyses = useMemo(
-    () => new Map(decks.map((d) => [d.id, analyzeDeck(d, index, collection)])),
-    [decks, index, collection]
+    () => new Map(decks.map((d) => [d.id, analyzeDeck(d, index, collection, cardLang.lang, allocation.availableFor)])),
+    [decks, index, collection, cardLang.lang, allocation]
   );
-  const conflicts = useMemo(() => getSharedCopyConflicts(decks, collection), [decks, collection]);
+  // Shared cards still to split, per deck
+  const contestedByDeck = (deckId) =>
+    allocation.shared.filter((s) => s.contested && s.decks.some((d) => d.deck.id === deckId)).length;
   const illegal = decks.filter(
     (d) => d.kind !== 'reference' && d.format === 'core' && analyses.get(d.id).errors.some((e) => e.code === 'legality')
   );
@@ -155,49 +169,43 @@ const DecksView = ({ onOpenSidebar, onLocate }) => {
             </p>
           )}
 
-          {(conflicts.length > 0 || illegal.length > 0 || rotating.length > 0) && (
+          {(illegal.length > 0 || rotating.length > 0) && (
             <div className="space-y-2">
-              {illegal.map((d) => (
+              {[
+                ...illegal.map((d) => ({ deck: d, tone: 'error', text: 'contient des cartes qui ne sont plus légales en Core.' })),
+                ...rotating.map((d) => ({
+                  deck: d,
+                  tone: 'warning',
+                  text: analyses.get(d.id).warnings.find((w) => w.code === 'rotation')?.message,
+                })),
+              ].map(({ deck: d, tone, text }) => (
                 <button
-                  key={`illegal-${d.id}`}
+                  key={`${tone}-${d.id}`}
                   onClick={() => setView({ kind: 'decks', deckId: d.id })}
-                  className="w-full flex gap-2 text-left text-sm text-rose-200 rounded-xl bg-rose-500/[0.07] ring-1 ring-inset ring-rose-400/20 px-4 py-3"
+                  className={`w-full flex items-center gap-3 text-left rounded-2xl px-4 py-3 ring-1 ring-inset transition-colors ${
+                    tone === 'error'
+                      ? 'bg-gradient-to-br from-rose-500/[0.09] to-transparent ring-rose-400/25 hover:ring-rose-400/40'
+                      : 'bg-gradient-to-br from-amber-500/[0.07] to-transparent ring-amber-400/20 hover:ring-amber-400/35'
+                  }`}
                 >
-                  <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
-                  <span>
-                    <b>{d.name}</b> contient des cartes qui ne sont plus légales en Core.
+                  <span
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                      tone === 'error' ? 'bg-rose-400/15 text-rose-300' : 'bg-amber-400/15 text-amber-300'
+                    }`}
+                  >
+                    {tone === 'error' ? <AlertCircle size={17} /> : <AlertTriangle size={17} />}
                   </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-semibold text-white truncate">{d.name}</span>
+                    <span className="block text-xs text-slate-400 leading-snug">{text}</span>
+                  </span>
+                  <ChevronRight size={16} className="flex-shrink-0 text-slate-500" />
                 </button>
               ))}
-              {rotating.map((d) => (
-                <button
-                  key={`rot-${d.id}`}
-                  onClick={() => setView({ kind: 'decks', deckId: d.id })}
-                  className="w-full flex gap-2 text-left text-sm text-amber-200 rounded-xl bg-amber-500/[0.06] ring-1 ring-inset ring-amber-400/20 px-4 py-3"
-                >
-                  <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
-                  <span>
-                    <b>{d.name}</b> : {analyses.get(d.id).warnings.find((w) => w.code === 'rotation')?.message}
-                  </span>
-                </button>
-              ))}
-              {conflicts.length > 0 && (
-                <div className="flex gap-2 text-sm text-amber-200 rounded-xl bg-amber-500/[0.06] ring-1 ring-inset ring-amber-400/20 px-4 py-3">
-                  <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
-                  <div>
-                    Cartes partagées entre decks sans assez d'exemplaires :
-                    <ul className="mt-1 text-xs text-slate-300 space-y-0.5">
-                      {conflicts.map((c) => (
-                        <li key={c.key}>
-                          <b>{cardLang.keyName(c.key, c.name)}</b> : {c.owned} possédée{c.owned > 1 ? 's' : ''}, {c.needed} utilisées ({c.decks.map((u) => `${u.qty} dans ${u.deck.name}`).join(', ')})
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              )}
             </div>
           )}
+
+          {tab === 'mine' && <SharedCardsPanel onOpenDeck={(id) => setView({ kind: 'decks', deckId: id })} />}
 
           <div className="flex gap-1">
             {[
@@ -232,7 +240,13 @@ const DecksView = ({ onOpenSidebar, onLocate }) => {
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
             <AnimatePresence initial={false}>
               {shown.map((deck) => (
-                <DeckTile key={deck.id} deck={deck} analysis={analyses.get(deck.id)} onOpen={() => setView({ kind: 'decks', deckId: deck.id })} />
+                <DeckTile
+                  key={deck.id}
+                  deck={deck}
+                  analysis={analyses.get(deck.id)}
+                  contested={contestedByDeck(deck.id)}
+                  onOpen={() => setView({ kind: 'decks', deckId: deck.id })}
+                />
               ))}
             </AnimatePresence>
           </div>

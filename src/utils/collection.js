@@ -69,28 +69,70 @@ export const getDeckUsage = (decks) => {
 };
 
 /**
- * Cards several decks share with fewer copies owned than they need together.
- * @returns {{ key, name, owned, needed, decks: { deck, qty }[] }[]}
+ * How the owned copies of each card are split between the user's decks.
+ *
+ * allocations: { [key]: { [deckId]: qty } }, the copies the user assigned to a deck. They are
+ * capped by what the deck plays and by the copies owned (decks in list order). Unassigned copies
+ * stay shared: every deck playing the card counts them. So a deck can use its assigned copies
+ * plus the shared ones: owned minus the copies assigned to the other decks.
+ *
+ * @returns {{
+ *   availableFor: (deckId: string|null, key: string) => number,
+ *   shared: { key, name, owned, needed, free, contested, decks: { deck, qty, assigned, available, missing }[] }[]
+ * }} shared: cards several decks play with fewer copies owned than they need together;
+ *   contested while shared copies are still disputed (the user has not split them yet)
  */
-export const getSharedCopyConflicts = (decks, collection) =>
-  [...getDeckUsage(decks).entries()]
-    .map(([key, uses]) => ({
+export const getCopyAllocation = (decks, collection, allocations = {}) => {
+  const assigned = new Map();
+  const shared = [];
+  for (const [key, uses] of getDeckUsage(decks)) {
+    const owned = getOwned(collection, key);
+    let free = owned;
+    const byDeck = new Map();
+    for (const { deck, qty } of uses) {
+      const copies = Math.max(0, Math.min(allocations[key]?.[deck.id] ?? 0, qty, free));
+      if (copies) byDeck.set(deck.id, copies);
+      free -= copies;
+    }
+    if (byDeck.size) assigned.set(key, byDeck);
+
+    const needed = uses.reduce((s, u) => s + u.qty, 0);
+    if (uses.length < 2 || needed <= owned || owned === 0) continue;
+    const split = uses.map(({ deck, qty }) => {
+      const mine = byDeck.get(deck.id) ?? 0;
+      return { deck, qty, assigned: mine, available: mine + free, missing: Math.max(0, qty - mine - free) };
+    });
+    shared.push({
       key,
       name: uses[0].deck.cards.find((c) => c.key === key)?.name ?? key,
-      owned: getOwned(collection, key),
-      needed: uses.reduce((s, u) => s + u.qty, 0),
-      decks: uses,
-    }))
-    .filter((c) => c.decks.length > 1 && c.needed > c.owned && c.owned > 0);
+      owned,
+      needed,
+      free,
+      contested: free > 0 && split.filter((d) => d.qty > d.assigned).length > 1,
+      decks: split,
+    });
+  }
+
+  const availableFor = (deckId, key) => {
+    let others = 0;
+    for (const [id, copies] of assigned.get(key) ?? []) if (id !== deckId) others += copies;
+    return getOwned(collection, key) - others;
+  };
+  return { availableFor, shared };
+};
+
+/** Cards several decks still dispute: fewer copies owned than needed, not split by the user yet. */
+export const getSharedCopyConflicts = (decks, collection, allocations = {}) =>
+  getCopyAllocation(decks, collection, allocations).shared.filter((c) => c.contested);
 
 /**
  * Where to fetch each card of a deck in the binders, ordered so each binder is browsed once,
  * front to back. Copies already pulled for this deck are skipped; copies pulled for another deck
- * are not available.
+ * are not available, nor the copies assigned to another deck (availableFor, see getCopyAllocation).
  *
  * @returns {{ rows: { key, card, binder, cardNumber, location, take, position }[], short: { key, name, missing }[] }}
  */
-export const getPullList = (deck, collection, pulls, binders) => {
+export const getPullList = (deck, collection, pulls, binders, availableFor = null) => {
   const rows = [];
   const short = [];
   for (const entry of deck.cards) {
@@ -99,8 +141,12 @@ export const getPullList = (deck, collection, pulls, binders) => {
       (s, c) => s + getPulledCount(pulls, c.binder.id, c.cardNumber, deck.id),
       0
     );
-    let needed = entry.qty - alreadyPulled;
-    if (needed <= 0) continue;
+    const wanted = availableFor ? Math.min(entry.qty, Math.max(0, availableFor(deck.id, entry.key))) : entry.qty;
+    let needed = wanted - alreadyPulled;
+    if (needed <= 0) {
+      if (wanted < entry.qty) short.push({ key: entry.key, name: entry.name, missing: entry.qty - Math.max(wanted, alreadyPulled) });
+      continue;
+    }
     // The printing chosen in the deck first, then the others
     const copies = [...(owned?.copies ?? [])].sort((a, b) => (b.card.id === entry.id) - (a.card.id === entry.id));
     for (const copy of copies) {
@@ -119,7 +165,8 @@ export const getPullList = (deck, collection, pulls, binders) => {
         position: getPositionInPage(parseInt(copy.cardNumber, 10), getPockets(copy.binder.gridRows, copy.binder.gridCols)),
       });
     }
-    if (needed > 0) short.push({ key: entry.key, name: entry.name, missing: needed });
+    const missing = needed + entry.qty - wanted;
+    if (missing > 0) short.push({ key: entry.key, name: entry.name, missing });
   }
   const binderOrder = new Map(binders.map((b, i) => [b.id, i]));
   rows.sort(

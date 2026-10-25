@@ -14,6 +14,8 @@ const DEFAULT_STATE = {
   decks: [],
   // Copies taken out of a binder for a deck: { id, deckId, binderId, cardNumber, qty }
   pulls: [],
+  // Copies of a card several decks share, assigned to one of them: { [cardKey]: { [deckId]: qty } }
+  allocations: {},
   // Main screen: { kind: 'binder' } shows the active binder, other kinds are the collection-wide views
   view: { kind: 'binder' },
   prefs: {
@@ -316,22 +318,50 @@ export const useBinders = () => {
     const prev = stateRef.current;
     const index = prev.decks.findIndex((d) => d.id === deckId);
     if (index === -1) return null;
-    const snapshot = { deck: prev.decks[index], index, pulls: prev.pulls.filter((p) => p.deckId === deckId) };
+    const allocations = Object.fromEntries(
+      Object.entries(prev.allocations)
+        .filter(([, byDeck]) => byDeck[deckId])
+        .map(([key, byDeck]) => [key, byDeck[deckId]])
+    );
+    const snapshot = { deck: prev.decks[index], index, pulls: prev.pulls.filter((p) => p.deckId === deckId), allocations };
     setState((p) => ({
       ...p,
       decks: p.decks.filter((d) => d.id !== deckId),
       pulls: p.pulls.filter((x) => x.deckId !== deckId),
+      allocations: Object.fromEntries(
+        Object.entries(p.allocations).map(([key, byDeck]) => [
+          key,
+          Object.fromEntries(Object.entries(byDeck).filter(([id]) => id !== deckId)),
+        ])
+      ),
       view: p.view.deckId === deckId ? { kind: 'decks' } : p.view,
     }));
     return snapshot;
   }, []);
 
-  const restoreDeck = useCallback(({ deck, index, pulls }) => {
+  const restoreDeck = useCallback(({ deck, index, pulls, allocations = {} }) => {
     setState((prev) => {
       if (prev.decks.some((d) => d.id === deck.id)) return prev;
       const decks = [...prev.decks];
       decks.splice(index, 0, deck);
-      return { ...prev, decks, pulls: [...prev.pulls, ...pulls] };
+      const restored = { ...prev.allocations };
+      for (const [key, qty] of Object.entries(allocations)) restored[key] = { ...restored[key], [deck.id]: qty };
+      return { ...prev, decks, pulls: [...prev.pulls, ...pulls], allocations: restored };
+    });
+  }, []);
+
+  /**
+   * Assigns copies of a card to decks: { [deckId]: qty } replaces the card's split (0 removes a
+   * deck). Copies left unassigned stay shared by every deck playing the card.
+   */
+  const setAllocation = useCallback((key, split) => {
+    setState((prev) => {
+      const byDeck = Object.fromEntries(
+        Object.entries({ ...prev.allocations[key], ...split }).filter(([, qty]) => qty > 0)
+      );
+      const allocations = { ...prev.allocations, [key]: byDeck };
+      if (Object.keys(byDeck).length === 0) delete allocations[key];
+      return { ...prev, allocations };
     });
   }, []);
 
@@ -404,6 +434,7 @@ export const useBinders = () => {
     prefs: state.prefs,
     decks: state.decks,
     pulls: state.pulls,
+    allocations: state.allocations,
     view: state.view,
     state,
     createBinder,
@@ -431,5 +462,6 @@ export const useBinders = () => {
     restoreDeckVersion,
     pullCards,
     returnCards,
+    setAllocation,
   };
 };

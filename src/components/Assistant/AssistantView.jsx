@@ -160,7 +160,7 @@ const ScopePicker = ({ binders, selected, onChange, includeReferences, onInclude
 
 const AssistantView = ({ onOpenSidebar }) => {
   const store = useStore();
-  const { binders, decks, prefs, view, setView } = store;
+  const { binders, decks, allocations, prefs, view, setView } = store;
   const { index, loaded, total } = useCatalog();
   const prices = usePrices();
   const [settings, setSettings] = useState(loadAiSettings);
@@ -271,7 +271,7 @@ const AssistantView = ({ onOpenSidebar }) => {
 
       const controller = new AbortController();
       abortRef.current = controller;
-      const runTool = createToolRunner({ index, collection, decks, prices, tradeKeep: prefs.tradeKeep ?? 1 });
+      const runTool = createToolRunner({ index, collection, decks, allocations, prices, tradeKeep: prefs.tradeKeep ?? 1 });
       let usage = null;
       let snapshot = null;
       try {
@@ -318,7 +318,7 @@ const AssistantView = ({ onOpenSidebar }) => {
       await saveConversation(saved);
       setConversations((list) => [saved, ...list.filter((c) => c.id !== saved.id)]);
     },
-    [busy, index, settings, conversation, scope, includeReferences, pendingSystem, collection, decks, prices, prefs.tradeKeep, view.deckId, setView]
+    [busy, index, settings, conversation, scope, includeReferences, pendingSystem, collection, decks, allocations, prices, prefs.tradeKeep, view.deckId, setView]
   );
 
   const visible = conversation?.messages.filter((m) => !isToolResults(m)) ?? [];

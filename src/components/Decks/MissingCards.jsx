@@ -62,6 +62,9 @@ const MissingCards = ({ entries }) => {
             {e.buyCard && <CardThumb card={e.buyCard} className="w-8 flex-shrink-0" />}
             <span className="flex-1 min-w-0 text-sm text-slate-200 truncate">
               <b className="tabular-nums">{e.missing}×</b> {cardLang.fullName(e.buyCard, e.name)}
+              {e.reserved > 0 && (
+                <span className="text-[11px] text-sky-300/80"> · {e.reserved} réservée{e.reserved > 1 ? 's' : ''} pour un autre deck</span>
+              )}
             </span>
             <span className="text-xs tabular-nums text-slate-400">
               {e.subtotal != null ? prices.format(e.subtotal) : '—'}

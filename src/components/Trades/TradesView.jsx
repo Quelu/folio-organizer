@@ -11,6 +11,7 @@ import { getLorcanaSetName } from '../../data/games';
 import CardThumb from '../ui/CardThumb';
 import CopyButton from '../ui/CopyButton';
 import { useCardLang } from '../../hooks/useCardLang';
+import { useCopyAllocation } from '../../hooks/useCopyAllocation';
 
 const total = (items, selection) => items.reduce((s, i) => s + (i.price ?? 0) * (selection[i.id] ?? 0), 0);
 
@@ -163,6 +164,7 @@ const Panel = ({ title, hint, items, selection, onSelect, format, empty, actions
 const TradesView = ({ onOpenSidebar }) => {
   const { binders, decks, prefs, setPref } = useStore();
   const cardLang = useCardLang();
+  const { availableFor } = useCopyAllocation();
   const { index } = useCatalog();
   const collection = useCollection();
   const { status, getPrice, format, source: priceSource } = usePrices();
@@ -210,10 +212,10 @@ const TradesView = ({ onOpenSidebar }) => {
     }
     const deck = decks.find((d) => d.id === source.id);
     if (!deck) return [];
-    return analyzeDeck(deck, index, collection)
+    return analyzeDeck(deck, index, collection, 'en', availableFor)
       .missing.filter((e) => e.card)
       .map((e) => ({ id: e.card.id, card: e.card, foil: false, qty: e.missing, price: getPrice(e.card, false) }));
-  }, [index, source, binders, decks, collection, withSpecials, getPrice]);
+  }, [index, source, binders, decks, collection, withSpecials, getPrice, availableFor]);
 
   const haves = useMemo(
     () => (status === 'ready' ? getTradeableSurplus(collection, decks, keep, getPrice) : []),
