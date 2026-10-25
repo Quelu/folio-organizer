@@ -80,5 +80,7 @@ export const getBinderStats = (binder) => {
     ? entries.filter(([num]) => parseInt(num, 10) <= binder.setSize).length
     : unique;
   const progress = binder.setSize ? Math.min(1, owned / binder.setSize) : null;
-  return { unique, copies, foils, owned, progress };
+  // Special / enchanted cards numbered past the set: owned, but outside the completion count
+  const outOfSet = unique - owned;
+  return { unique, copies, foils, owned, outOfSet, progress };
 };

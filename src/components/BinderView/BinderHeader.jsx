@@ -40,7 +40,7 @@ const BinderHeader = ({
   onCardmarket,
 }) => {
   const game = getGame(binder.gameType);
-  const { unique, copies, foils, owned, progress } = getBinderStats(binder);
+  const { unique, copies, foils, owned, outOfSet, progress } = getBinderStats(binder);
   const setName = binder.gameType === 'lorcana' ? getLorcanaSetName(binder.setCode) : null;
 
   return (
@@ -141,11 +141,20 @@ const BinderHeader = ({
           <StatChip value={copies} label={`exemplaire${copies !== 1 ? 's' : ''}`} />
           {foils > 0 && <StatChip value={foils} label={<span className="foil-text font-semibold">foil{foils !== 1 ? 's' : ''}</span>} />}
           {progress !== null && (
-            <div className="flex items-center gap-2.5 flex-1 min-w-[180px] max-w-xs">
+            <div className="flex items-center gap-2.5 flex-1 min-w-[180px] max-w-sm">
               <ProgressBar value={progress} className="flex-1 h-1.5" />
-              <span className="text-xs text-slate-400 tabular-nums">
+              <span className="text-xs text-slate-400 tabular-nums whitespace-nowrap">
                 <AnimatedNumber value={Math.floor(progress * 100)} className="font-bold text-white" />
                 <b className="text-white"> %</b> · <AnimatedNumber value={owned} />/{binder.setSize}
+                {outOfSet > 0 && (
+                  <span
+                    className="text-slate-500"
+                    title={`Cartes numérotées au-delà de ${binder.setSize}, non comptées dans la progression`}
+                  >
+                    {' '}
+                    · +<AnimatedNumber value={outOfSet} /> hors set
+                  </span>
+                )}
               </span>
             </div>
           )}
