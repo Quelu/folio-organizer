@@ -9,6 +9,7 @@ import { LORCANA_RARITIES, getLorcanaSetName } from '../../data/games';
 import ProgressBar from '../ui/ProgressBar';
 import CardThumb from '../ui/CardThumb';
 import CopyButton from '../ui/CopyButton';
+import { useCardLang } from '../../hooks/useCardLang';
 
 const ALL = 'all';
 const PLAYSET = 4;
@@ -73,6 +74,7 @@ const CollectionStatsView = ({ onOpenSidebar }) => {
   const { binders, decks, prefs, setPref } = useStore();
   const { index, status, loaded, total, refresh } = useCatalog();
   const collection = useCollection();
+  const cardLang = useCardLang();
 
   const chapters = useMemo(
     () =>
@@ -160,11 +162,12 @@ const CollectionStatsView = ({ onOpenSidebar }) => {
         return { ...e, used, surplus: e.total - reserved };
       })
       .filter((e) => e.surplus > 0)
-      .sort((a, b) => b.surplus - a.surplus || a.card.fullName.localeCompare(b.card.fullName));
-  }, [collection, decks, keep, selected, selectedSets]);
+      .sort((a, b) => b.surplus - a.surplus || cardLang.fullName(a.card).localeCompare(cardLang.fullName(b.card)));
+  }, [collection, decks, keep, selected, selectedSets, cardLang]);
 
   const playsetText = playsets?.incomplete.map((p) => `${p.missing} ${p.card.fullName}`).join('\n') ?? '';
-  const doublesText = doubles.map((d) => `${d.surplus} ${d.card.fullName}`).join('\n');
+  // Doubles go to other players: in the card language. Missing playset copies stay in English for Cardmarket
+  const doublesText = doubles.map((d) => `${d.surplus} ${cardLang.fullName(d.card)}`).join('\n');
 
   return (
     <div className="flex flex-col h-full">
@@ -336,7 +339,7 @@ const CollectionStatsView = ({ onOpenSidebar }) => {
                       <li key={d.key} className="flex items-center gap-3 py-2">
                         <CardThumb card={d.card} className="w-10 flex-shrink-0" />
                         <div className="flex-1 min-w-0">
-                          <div className="text-sm text-white truncate">{d.card.fullName}</div>
+                          <div className="text-sm text-white truncate">{cardLang.fullName(d.card)}</div>
                           <div className="text-[11px] text-slate-500 truncate">
                             {d.copies
                               .map((c) => `${c.binder.name} · p. ${c.location.page} (${c.normal + c.foil})`)

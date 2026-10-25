@@ -8,6 +8,7 @@ import { useCatalog } from '../../hooks/catalogContext';
 import { usePrices } from '../../hooks/usePrices';
 import { getMainPrinting } from '../../utils/catalog';
 import { getDeckWantsLines } from '../../utils/cardmarketExport';
+import { useCardLang } from '../../hooks/useCardLang';
 
 const CARDMARKET_WANTS_URL = 'https://www.cardmarket.com/fr/Lorcana/Wants';
 
@@ -19,6 +20,7 @@ const CARDMARKET_WANTS_URL = 'https://www.cardmarket.com/fr/Lorcana/Wants';
 const MissingCards = ({ entries }) => {
   const { index } = useCatalog();
   const prices = usePrices();
+  const cardLang = useCardLang();
   const [withExpansion, setWithExpansion] = useState(true);
   const [tradeCard, setTradeCard] = useState(null);
 
@@ -59,7 +61,7 @@ const MissingCards = ({ entries }) => {
           <div key={e.key} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-white/[0.03]">
             {e.buyCard && <CardThumb card={e.buyCard} className="w-8 flex-shrink-0" />}
             <span className="flex-1 min-w-0 text-sm text-slate-200 truncate">
-              <b className="tabular-nums">{e.missing}×</b> {e.name}
+              <b className="tabular-nums">{e.missing}×</b> {cardLang.fullName(e.buyCard, e.name)}
             </span>
             <span className="text-xs tabular-nums text-slate-400">
               {e.subtotal != null ? prices.format(e.subtotal) : '—'}
@@ -69,7 +71,7 @@ const MissingCards = ({ entries }) => {
                 onClick={() => setTradeCard(e.buyCard)}
                 className="btn-icon p-1.5"
                 title="Trouver un échange à valeur égale"
-                aria-label={`Échanger pour ${e.name}`}
+                aria-label={`Échanger pour ${cardLang.fullName(e.buyCard, e.name)}`}
               >
                 <ArrowLeftRight size={14} />
               </button>

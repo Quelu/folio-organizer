@@ -31,6 +31,8 @@ const SidebarContent = ({
   deckCount,
   onNavigate,
   onSearch,
+  cardLanguage,
+  onCardLanguage,
   activeBinderId,
   onSelect,
   onCreateNew,
@@ -141,7 +143,29 @@ const SidebarContent = ({
         )}
       </nav>
 
-      <div className="p-3 border-t border-white/5 flex gap-1">
+      <div className="px-4 pt-3 border-t border-white/5 flex items-center justify-between gap-3">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">Langue des cartes</span>
+        <div className="flex items-center rounded-lg ring-1 ring-inset ring-white/10 p-0.5" role="group" aria-label="Langue des cartes">
+          {[
+            { key: 'fr', label: 'FR', title: 'Noms, textes et images en français' },
+            { key: 'en', label: 'EN', title: 'Noms, textes et images en anglais' },
+          ].map((l) => (
+            <button
+              key={l.key}
+              onClick={() => onCardLanguage(l.key)}
+              aria-pressed={cardLanguage === l.key}
+              title={l.title}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors ${
+                cardLanguage === l.key ? 'bg-white/10 text-white' : 'text-slate-500 hover:text-white'
+              }`}
+            >
+              {l.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="p-3 flex gap-1">
         <button
           onClick={onExportBackup}
           disabled={binders.length === 0}

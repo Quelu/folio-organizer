@@ -7,6 +7,7 @@ import { useToast } from '../ui/toastContext';
 import { getPullList } from '../../utils/collection';
 import { findPocketCard } from '../../utils/catalog';
 import { useCatalog } from '../../hooks/catalogContext';
+import { useCardLang } from '../../hooks/useCardLang';
 
 /** "Page 3 · feuille 2 recto · rangée 1, col. 2" */
 const describeLocation = (loc) =>
@@ -20,6 +21,7 @@ const PullList = ({ deck, onLocate }) => {
   const notify = useToast();
   const { binders, pulls, pullCards, returnCards } = useStore();
   const { index } = useCatalog();
+  const cardLang = useCardLang();
   const collection = useCollection();
   const { rows, short } = useMemo(() => getPullList(deck, collection, pulls, binders), [deck, collection, pulls, binders]);
 
@@ -80,7 +82,7 @@ const PullList = ({ deck, onLocate }) => {
                 <CardThumb card={row.card} className="w-10 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm text-white truncate">
-                    <b className="tabular-nums">{row.take}×</b> {row.card.fullName}
+                    <b className="tabular-nums">{row.take}×</b> {cardLang.fullName(row.card)}
                   </div>
                   <div className="text-xs text-slate-500 truncate">
                     n° {row.cardNumber} · {describeLocation(row.location)}
@@ -117,7 +119,7 @@ const PullList = ({ deck, onLocate }) => {
           <ul className="text-xs text-slate-300 space-y-0.5 pl-6 list-disc">
             {short.map((s) => (
               <li key={s.key}>
-                {s.missing}× {s.name}
+                {s.missing}× {cardLang.keyName(s.key, s.name)}
               </li>
             ))}
           </ul>
@@ -149,7 +151,7 @@ const PullList = ({ deck, onLocate }) => {
               return (
                 <div key={p.id} className="flex items-center gap-2 text-xs text-slate-400 px-2 py-1 rounded-lg hover:bg-white/[0.03]">
                   <span className="flex-1 truncate">
-                    <b className="text-slate-200">{p.qty}×</b> {card?.fullName ?? `n° ${p.cardNumber}`}{' '}
+                    <b className="text-slate-200">{p.qty}×</b> {cardLang.fullName(card, `n° ${p.cardNumber}`)}{' '}
                     <span className="text-slate-600">
                       · {binder.name} n° {p.cardNumber}
                     </span>

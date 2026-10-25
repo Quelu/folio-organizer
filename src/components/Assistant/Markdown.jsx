@@ -2,13 +2,16 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useCatalog } from '../../hooks/catalogContext';
 import { getInk } from '../../utils/catalog';
+import { useCardLang } from '../../hooks/useCardLang';
 
 const CARD_LINK = '#card:';
 
 /** Card cited by the assistant: name with its ink, picture on hover. */
 const CardMention = ({ id }) => {
   const { index } = useCatalog();
+  const cardLang = useCardLang();
   const card = index?.byId.get(id);
+  const image = cardLang.image(card, 'normal');
   if (!card) return <span className="text-slate-400">[{id}]</span>;
   return (
     <span className="group relative inline-flex items-baseline">
@@ -16,11 +19,11 @@ const CardMention = ({ id }) => {
         {card.inks.map((ink) => (
           <span key={ink} className="w-1.5 h-1.5 rounded-full self-center" style={{ background: getInk(ink).color }} />
         ))}
-        {card.fullName}
+        {cardLang.fullName(card)}
       </span>
-      {card.image && (
+      {image && (
         <span className="pointer-events-none absolute left-0 bottom-full mb-2 z-30 w-44 opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-150">
-          <img src={card.image} alt={card.fullName} className="w-full rounded-lg shadow-2xl shadow-black/70 ring-1 ring-white/20" />
+          <img src={image} alt={cardLang.fullName(card)} className="w-full rounded-lg shadow-2xl shadow-black/70 ring-1 ring-white/20" />
         </span>
       )}
     </span>

@@ -91,27 +91,78 @@ export const slimLorcastCard = (c) => {
 
 const byNumber = (a, b) => baseNumber(a.number) - baseNumber(b.number) || a.number.localeCompare(b.number);
 
+/** Localized data of a printing; art variants missing from LorcanaJSON (8-1f) use the base card. */
+const findLocalized = (cards, card) => cards?.[card.id] ?? cards?.[`${card.set}-${baseNumber(card.number)}`] ?? null;
+
 /**
  * Indexes the cards of several sets.
  * @param {{ [setCode: string]: object[] }} cardsBySet slim cards per set
+ * @param {{ fr?: object, en?: object }} [localized] LorcanaJSON cards by id and language
+ *   (src/utils/lorcanaJson.js): names, texts, official pictures and foil masks
  */
-export const buildCatalogIndex = (cardsBySet) => {
+export const buildCatalogIndex = (cardsBySet, localized = {}) => {
   const byId = new Map();
   const byKey = new Map();
+  const byFrenchKey = new Map();
   const bySet = new Map();
   const all = [];
   const sets = Object.keys(cardsBySet).sort((a, b) => Number(a) - Number(b));
   for (const set of sets) {
-    const cards = [...cardsBySet[set]].sort(byNumber);
+    const cards = [...cardsBySet[set]].sort(byNumber).map((base) => {
+      const fr = findLocalized(localized.fr, base);
+      const en = findLocalized(localized.en, base);
+      return {
+        ...base,
+        l10n: { fr, en },
+        cardmarketId: fr?.cardmarketId ?? en?.cardmarketId ?? null,
+        // Searched in both languages, so French and English names, classes and texts all match
+        search: normalizeName(
+          [base.fullName, fr?.fullName, ...base.classifications, ...(fr?.classifications ?? []), ...base.keywords, base.text, fr?.text, base.id]
+            .filter(Boolean)
+            .join(' ')
+        ),
+      };
+    });
     bySet.set(set, cards);
     for (const card of cards) {
       all.push(card);
       byId.set(card.id, card);
       byKey.set(card.key, [...(byKey.get(card.key) ?? []), card]);
+      if (card.l10n.fr) byFrenchKey.set(normalizeName(card.l10n.fr.fullName), card.key);
     }
   }
-  return { byId, byKey, bySet, all, sets };
+  return { byId, byKey, byFrenchKey, bySet, all, sets };
 };
+
+/**
+ * Card texts in the chosen language ('fr' or 'en'), English when no translation is known.
+ * @returns {{ name, version, fullName, text, flavor, classifications }}
+ */
+export const localizeCard = (card, lang) => {
+  const fr = lang === 'fr' ? card?.l10n?.fr : null;
+  return {
+    name: fr?.name ?? card?.name,
+    version: fr ? fr.version : card?.version,
+    fullName: fr?.fullName ?? card?.fullName,
+    text: fr?.text ?? card?.text,
+    flavor: fr?.flavor ?? card?.l10n?.en?.flavor ?? null,
+    classifications: fr?.classifications ?? card?.classifications ?? [],
+  };
+};
+
+/**
+ * Picture of the card in the chosen language: the official one from LorcanaJSON, else Lorcast's.
+ * size: 'small' (thumbnails, binder pockets), 'normal' (a card shown alone) or 'large' (sharp screens).
+ */
+export const getCardImage = (card, lang, size = 'small') => {
+  const official = card?.l10n?.[lang];
+  if (official?.thumb) return size === 'large' ? official.image : official.thumb;
+  if (size === 'small') return card?.imageSmall ?? card?.image ?? null;
+  return size === 'large' ? (card?.image?.replace('/digital/normal/', '/digital/large/') ?? null) : (card?.image ?? null);
+};
+
+/** Foil mask matching getCardImage's picture (only official pictures have one). */
+export const getFoilMask = (card, lang) => (card?.l10n?.[lang]?.thumb ? card.l10n[lang].foilMask : null);
 
 /** Printing filling a binder pocket: exact number first, else the first art variant (4 → 4a). */
 export const findPocketCard = (index, setCode, number) => {
@@ -159,15 +210,16 @@ export const formatCardLine = (card) => {
         : '';
   const classes = card.classifications.length ? ` (${card.classifications.join(', ')})` : '';
   const text = card.text ? ` | ${card.text.replace(/\s+/g, ' ')}` : '';
-  return `[${card.id}] ${card.fullName} | ${card.inks.join('/')} ${card.cost}${card.inkwell ? '⬡' : ''} | ${card.types.join('/')}${classes}${stats}${text} | ${card.rarity ?? '?'}`;
+  const french = card.l10n?.fr && card.l10n.fr.fullName !== card.fullName ? ` (FR : ${card.l10n.fr.fullName})` : '';
+  return `[${card.id}] ${card.fullName}${french} | ${card.inks.join('/')} ${card.cost}${card.inkwell ? '⬡' : ''} | ${card.types.join('/')}${classes}${stats}${text} | ${card.rarity ?? '?'}`;
 };
 
-/** Loose text search on name, version, classifications and rules text. */
+/** Loose text search on names, versions, classifications and rules texts, in French and English. */
 export const matchesQuery = (card, query) => {
   if (!query) return true;
-  const haystack = normalizeName(
-    `${card.fullName} ${card.classifications.join(' ')} ${card.keywords.join(' ')} ${card.text} ${card.id}`
-  );
+  const haystack =
+    card.search ??
+    normalizeName(`${card.fullName} ${card.classifications.join(' ')} ${card.keywords.join(' ')} ${card.text} ${card.id}`);
   return normalizeName(query)
     .split(' ')
     .every((word) => haystack.includes(word));

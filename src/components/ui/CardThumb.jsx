@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { getInk } from '../../utils/catalog';
 import { useCardPreview } from '../CardPreview/cardPreviewContext';
+import { useCardLang } from '../../hooks/useCardLang';
+import FoilLayers from './FoilLayers';
 
 /**
  * Card picture from the catalog, with the card name on a tinted background until it loads.
@@ -9,7 +11,9 @@ import { useCardPreview } from '../CardPreview/cardPreviewContext';
 const CardThumb = ({ card, size = 'small', className = '', dimmed = false, foil = false, preview = true }) => {
   const [loaded, setLoaded] = useState(false);
   const cardPreview = useCardPreview();
-  const src = size === 'small' ? (card?.imageSmall ?? card?.image) : card?.image;
+  const cardLang = useCardLang();
+  const src = cardLang.image(card, size === 'small' ? 'small' : 'large');
+  const name = cardLang.fullName(card, card?.fullName ?? '?');
   const tint = getInk(card?.inks?.[0]).color;
   const canPreview = Boolean(preview && cardPreview && card?.id);
 
@@ -29,7 +33,7 @@ const CardThumb = ({ card, size = 'small', className = '', dimmed = false, foil 
         onKeyDown: (e) => {
           if (e.key === 'Enter' || e.key === ' ') openPreview(e);
         },
-        'aria-label': `Voir ${card.fullName} en grand`,
+        'aria-label': `Voir ${name} en grand`,
         'data-preview-id': card.id,
         'data-preview-foil': foil || undefined,
       })}
@@ -42,13 +46,13 @@ const CardThumb = ({ card, size = 'small', className = '', dimmed = false, foil 
     >
       {!loaded && (
         <span className="absolute inset-0 flex items-center justify-center p-1.5 text-center text-[10px] leading-tight text-slate-400">
-          {card?.fullName ?? '?'}
+          {name}
         </span>
       )}
       {src && (
         <img
           src={src}
-          alt={card.fullName}
+          alt={name}
           loading="lazy"
           draggable={false}
           onLoad={() => setLoaded(true)}
@@ -57,7 +61,7 @@ const CardThumb = ({ card, size = 'small', className = '', dimmed = false, foil 
           }`}
         />
       )}
-      {foil && <div aria-hidden className="foil-sheen pointer-events-none absolute inset-0 mix-blend-color-dodge" />}
+      {foil && <FoilLayers mask={cardLang.foilMask(card)} />}
     </div>
   );
 };

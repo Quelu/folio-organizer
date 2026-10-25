@@ -27,13 +27,17 @@ import {
   getCoreSets,
   getMainType,
   getInk,
+  localizeCard,
 } from '../src/utils/catalog.js';
+import { buildLocalizedCards } from '../src/utils/lorcanaJson.js';
 import { buildCollection, getPullList, getSharedCopyConflicts, getDeckUsage, getPulledCount } from '../src/utils/collection.js';
 import { analyzeDeck, parseDeckList, formatDeckList } from '../src/utils/deckRules.js';
 import { getBinderStats, getLocation } from '../src/utils/calculations.js';
 import { getGame, getLorcanaSetName, setKnownLorcanaSets, withFrenchNames, LORCANA_RARITIES } from '../src/data/games.js';
 
 const LORCAST = 'https://api.lorcast.com/v0';
+// French names and texts, from the official app data (see src/utils/lorcanaJson.js)
+const LORCANAJSON_FR = 'https://lorcanajson.org/files/current/fr/allCards.json';
 const CACHE_FILE = path.join(os.homedir(), '.cache', 'folio-mcp', 'catalog.json');
 // Prices and legalities change: refetch the catalog after two days, like the app
 const CATALOG_MAX_AGE = 2 * 24 * 60 * 60 * 1000;
@@ -106,7 +110,7 @@ let catalogAt = 0;
 
 const fetchJson = async (url) => {
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`Lorcast ${res.status} sur ${url}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status} sur ${url}`);
   return res.json();
 };
 
@@ -115,7 +119,17 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const indexFromCache = (cached) => {
   if (cached.sets?.length) setKnownLorcanaSets(withFrenchNames(cached.sets));
   catalogAt = cached.at;
-  return buildCatalogIndex(cached.cardsBySet);
+  return buildCatalogIndex(cached.cardsBySet, { fr: cached.fr ?? undefined });
+};
+
+/** French cards, or null when LorcanaJSON cannot be reached (the server then answers in English). */
+const fetchFrench = async () => {
+  try {
+    return buildLocalizedCards(await fetchJson(LORCANAJSON_FR));
+  } catch (error) {
+    log(`textes français indisponibles (${error.message})`);
+    return null;
+  }
 };
 
 const readCatalogCache = async () => {
@@ -129,7 +143,8 @@ const readCatalogCache = async () => {
 /** Every numbered Lorcana chapter from Lorcast, fetched one set at a time and cached on disk. */
 const fetchCatalog = async () => {
   const cached = await readCatalogCache();
-  if (cached && Date.now() - cached.at < CATALOG_MAX_AGE) return indexFromCache(cached);
+  // Caches from before the French texts (no fr field) are refreshed once
+  if (cached && Date.now() - cached.at < CATALOG_MAX_AGE && cached.fr !== undefined) return indexFromCache(cached);
   try {
     const sets = ((await fetchJson(`${LORCAST}/sets`)).results ?? [])
       .filter((s) => /^\d+$/.test(s.code))
@@ -141,7 +156,7 @@ const fetchCatalog = async () => {
       if (cards.length) cardsBySet[code] = cards.map(slimLorcastCard);
       await wait(100);
     }
-    const fresh = { at: Date.now(), sets, cardsBySet };
+    const fresh = { at: Date.now(), sets, cardsBySet, fr: await fetchFrench() };
     await fs.mkdir(path.dirname(CACHE_FILE), { recursive: true });
     await fs.writeFile(CACHE_FILE, JSON.stringify(fresh));
     log(`catalogue téléchargé : ${Object.keys(cardsBySet).length} chapitres`);
@@ -175,7 +190,11 @@ const getContext = async () => {
 // ---------------------------------------------------------------------------
 // Formatting
 
-const cite = (card) => `[${card.id}] ${card.fullName}`;
+/** "[1-42] Elsa - Esprit de l'hiver (Elsa - Spirit of Winter)": French first, English for lists found online. */
+const cite = (card) => {
+  const french = localizeCard(card, 'fr').fullName;
+  return `[${card.id}] ${french}${french !== card.fullName ? ` (${card.fullName})` : ''}`;
+};
 const inkLabel = (key) => getInk(key).label;
 const rarityLabel = (key) => LORCANA_RARITIES.find((r) => r.key === key)?.label ?? key ?? '?';
 const typeLabel = (key) => CARD_TYPES.find((t) => t.key === key)?.label ?? key;
@@ -235,10 +254,10 @@ const findDeck = (decks, query) => {
   return found;
 };
 
-/** Every word of the query appears in the card's full name. */
+/** Every word of the query appears in the card's full name, French or English. */
 const matchesName = (card, query) => {
   if (!query) return false;
-  const name = normalizeName(card.fullName);
+  const name = normalizeName(`${card.fullName} ${card.l10n?.fr?.fullName ?? ''}`);
   return normalizeName(query)
     .split(' ')
     .every((word) => name.includes(word));

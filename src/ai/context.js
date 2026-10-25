@@ -21,7 +21,7 @@ Données : la collection sélectionnée et les decks de référence sont plus ba
 Outils : search_cards pour chercher dans tout le catalogue (y compris les cartes non possédées), get_cards pour le détail (emplacements dans les fardes, prix, légalité), get_deck pour lire un deck de l'utilisateur, suggest_trades pour des échanges à valeur égale, propose_deck pour proposer un deck complet.
 
 Consignes de réponse :
-- Réponds en français, de façon concise et structurée (titres courts, listes). Les noms de cartes restent en anglais.
+- Réponds en français, de façon concise et structurée (titres courts, listes).
 - Cite chaque carte avec son identifiant entre doubles crochets, par exemple [[12-42]] : l'application l'affiche avec son image. N'invente jamais d'identifiant : utilise ceux des données ou des outils.
 - Pour proposer un deck complet ou une version modifiée d'un deck, appelle toujours propose_deck (l'application vérifie les règles et te renvoie les erreurs à corriger) au lieu d'écrire la liste dans ta réponse. Si propose_deck renvoie des erreurs, corrige et rappelle-le.
 - Par défaut, construis avec les cartes possédées ; si des cartes manquent, dis lesquelles et pourquoi elles valent l'achat ou l'échange.
@@ -48,7 +48,12 @@ const formatReferenceDeck = (deck, index) =>
  * Frozen with the conversation, so later turns reuse the cached prefix.
  * @returns {{ type: 'text', text: string }[]}
  */
-export const buildSystemPrompt = ({ binders, collection, decks, index, includeReferences, today = new Date() }) => {
+const CARD_NAMES = {
+  fr: "Noms de cartes : l'utilisateur joue avec des cartes en français. Dans ton texte, utilise le nom français donné après « FR : » (le nom anglais sinon) ; les cartes citées avec [[id]] s'affichent d'elles-mêmes en français. Les outils acceptent les deux langues.",
+  en: "Noms de cartes : l'utilisateur affiche les cartes en anglais. Dans ton texte, utilise les noms anglais ; les cartes citées avec [[id]] s'affichent d'elles-mêmes.",
+};
+
+export const buildSystemPrompt = ({ binders, collection, decks, index, includeReferences, lang = 'fr', today = new Date() }) => {
   const references = includeReferences ? decks.filter((d) => d.kind === 'reference' && d.cards.length) : [];
   const myDecks = decks.filter((d) => d.kind !== 'reference');
   const inkTotals = {};
@@ -76,7 +81,7 @@ export const buildSystemPrompt = ({ binders, collection, decks, index, includeRe
     .join('\n\n');
 
   return [
-    { type: 'text', text: INSTRUCTIONS },
+    { type: 'text', text: `${INSTRUCTIONS}\n\n${CARD_NAMES[lang] ?? CARD_NAMES.fr}` },
     { type: 'text', text: data },
   ];
 };

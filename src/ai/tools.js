@@ -11,7 +11,7 @@ export const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'Mots à trouver dans le nom, la version, les classes, mots-clés ou le texte (anglais).' },
+        query: { type: 'string', description: 'Mots à trouver dans le nom, la version, les classes, mots-clés ou le texte, en français ou en anglais.' },
         inks: { type: 'array', items: { type: 'string', enum: ['Amber', 'Amethyst', 'Emerald', 'Ruby', 'Sapphire', 'Steel'] } },
         types: { type: 'array', items: { type: 'string', enum: ['Character', 'Action', 'Song', 'Item', 'Location'] } },
         cost_min: { type: 'integer' },

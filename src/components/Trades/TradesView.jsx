@@ -10,6 +10,7 @@ import { getTradeableSurplus, buildTradeText, BULK_PRICE } from '../../utils/tra
 import { getLorcanaSetName } from '../../data/games';
 import CardThumb from '../ui/CardThumb';
 import CopyButton from '../ui/CopyButton';
+import { useCardLang } from '../../hooks/useCardLang';
 
 const total = (items, selection) => items.reduce((s, i) => s + (i.price ?? 0) * (selection[i.id] ?? 0), 0);
 
@@ -50,6 +51,7 @@ const balance = (haves, target) => {
 
 /** One card of a list, with a checkbox and a copy stepper when there are several. */
 const Row = ({ item, selected, onChange, format }) => {
+  const cardLang = useCardLang();
   const { card, foil, qty, price } = item;
   return (
     <li
@@ -62,12 +64,12 @@ const Row = ({ item, selected, onChange, format }) => {
         checked={selected > 0}
         onChange={(e) => onChange(e.target.checked ? 1 : 0)}
         className="w-4 h-4 accent-indigo-500 flex-shrink-0"
-        aria-label={`Sélectionner ${card.fullName}`}
+        aria-label={`Sélectionner ${cardLang.fullName(card)}`}
       />
       <CardThumb card={card} foil={foil} className="w-8 flex-shrink-0" />
       <div className="flex-1 min-w-0 leading-tight">
         <div className="text-sm text-slate-200 truncate">
-          {card.fullName}
+          {cardLang.fullName(card)}
           {foil && <span className="foil-text font-semibold text-xs"> foil</span>}
         </div>
         <div className="text-[11px] text-slate-500 truncate">
@@ -160,6 +162,7 @@ const Panel = ({ title, hint, items, selection, onSelect, format, empty, actions
 /** Equal-value trades: missing cards of a binder or deck against the user's surplus copies. */
 const TradesView = ({ onOpenSidebar }) => {
   const { binders, decks, prefs, setPref } = useStore();
+  const cardLang = useCardLang();
   const { index } = useCatalog();
   const collection = useCollection();
   const { status, getPrice, format, source: priceSource } = usePrices();
@@ -395,7 +398,7 @@ const TradesView = ({ onOpenSidebar }) => {
               </button>
               <CopyButton
                 text={
-                  wantTotal + offerTotal > 0 ? buildTradeText(picked(wants, wanted), picked(haves, offered), format) : ''
+                  wantTotal + offerTotal > 0 ? buildTradeText(picked(wants, wanted), picked(haves, offered), format, cardLang.fullName) : ''
                 }
                 label="Copier la proposition"
                 toast="Proposition d'échange copiée"

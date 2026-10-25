@@ -7,6 +7,7 @@ import DeckEditor from './DeckEditor';
 import DeckImportModal from './DeckImportModal';
 import { useStore } from '../../hooks/storeContext';
 import { useCatalog } from '../../hooks/catalogContext';
+import { useCardLang } from '../../hooks/useCardLang';
 import { useCollection } from '../../hooks/useCollection';
 import { useToast } from '../ui/toastContext';
 import { analyzeDeck } from '../../utils/deckRules';
@@ -60,6 +61,7 @@ const DecksView = ({ onOpenSidebar, onLocate }) => {
   const notify = useToast();
   const { decks, view, setView, createDeck, deleteDeck, restoreDeck } = useStore();
   const { index, status, loaded, total } = useCatalog();
+  const cardLang = useCardLang();
   const collection = useCollection();
   const [tab, setTab] = useState('mine');
   const [importOpen, setImportOpen] = useState(false);
@@ -188,7 +190,7 @@ const DecksView = ({ onOpenSidebar, onLocate }) => {
                     <ul className="mt-1 text-xs text-slate-300 space-y-0.5">
                       {conflicts.map((c) => (
                         <li key={c.key}>
-                          <b>{c.name}</b> : {c.owned} possédée{c.owned > 1 ? 's' : ''}, {c.needed} utilisées ({c.decks.map((u) => `${u.qty} dans ${u.deck.name}`).join(', ')})
+                          <b>{cardLang.keyName(c.key, c.name)}</b> : {c.owned} possédée{c.owned > 1 ? 's' : ''}, {c.needed} utilisées ({c.decks.map((u) => `${u.qty} dans ${u.deck.name}`).join(', ')})
                         </li>
                       ))}
                     </ul>

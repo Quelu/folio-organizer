@@ -2,6 +2,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Sparkles } from 'lucide-react';
 import { getCardsOnPage, getSheet } from '../../utils/calculations';
 import { getGame } from '../../data/games';
+import { findPocketCard } from '../../utils/catalog';
+import { useCatalog } from '../../hooks/catalogContext';
+import { useCardLang } from '../../hooks/useCardLang';
 import Confetti from '../ui/Confetti';
 import GridPocket from './GridPocket';
 
@@ -56,6 +59,10 @@ export const PagePanel = ({
   const { gridCols, cards, gameType, setSize } = binder;
   const { cardNumbers, complete } = getPageInfo(binder, page);
   const pocketStyle = getGame(gameType).pocket;
+  const { index } = useCatalog();
+  const cardLang = useCardLang();
+  // Picture in the card language with its foil mask, once the catalog knows the card
+  const pocketCard = (num) => (index && gameType === 'lorcana' ? findPocketCard(index, binder.setCode, num) : null);
   const isCelebrating = celebrate?.page === page;
 
   return (
@@ -74,6 +81,8 @@ export const PagePanel = ({
               key={num}
               cardNumber={num}
               cardData={cards[String(num)]}
+              catalogImage={cardLang.image(pocketCard(num), 'small')}
+              foilMask={cardLang.foilMask(pocketCard(num))}
               isHighlighted={highlight?.cardNumber === num}
               isLastAdded={lastAddedCard === num}
               pulled={pulledByPocket[String(num)]}

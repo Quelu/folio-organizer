@@ -22,6 +22,8 @@ const DEFAULT_STATE = {
     cardmarketExcludedRarities: ['Epic', 'Enchanted', 'Iconic', 'Bonus'],
     // Copies of each card kept out of trades: 1 for a collection, 4 for a playset
     tradeKeep: 1,
+    // Language of card names, texts and pictures: 'fr' or 'en'
+    cardLanguage: 'fr',
   },
 };
 

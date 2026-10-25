@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { History, RotateCcw, Save, GitCompare } from 'lucide-react';
 import { useStore } from '../../hooks/storeContext';
+import { useCardLang } from '../../hooks/useCardLang';
 import { useToast } from '../ui/toastContext';
 import { diffDeckCards } from '../../utils/deckRules';
 
@@ -9,6 +10,7 @@ const formatDate = (at) =>
 
 /** Changes from one card list to another, + in green, − in red. */
 export const DeckDiff = ({ before, after }) => {
+  const cardLang = useCardLang();
   const diff = diffDeckCards(before, after);
   if (diff.length === 0) return <p className="text-xs text-slate-500">Aucune différence.</p>;
   return (
@@ -20,7 +22,7 @@ export const DeckDiff = ({ before, after }) => {
             <span className={`w-8 text-right font-bold tabular-nums ${delta > 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
               {delta > 0 ? `+${delta}` : delta}
             </span>
-            <span className="text-slate-300 truncate">{d.name}</span>
+            <span className="text-slate-300 truncate">{cardLang.keyName(d.key, d.name)}</span>
             <span className="text-slate-600 tabular-nums">
               {d.before} → {d.after}
             </span>

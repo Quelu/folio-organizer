@@ -4,12 +4,14 @@ import { useStore } from '../../hooks/storeContext';
 import { useCollection } from '../../hooks/useCollection';
 import { usePrices } from '../../hooks/usePrices';
 import { getTradeableSurplus, suggestTrades, buildTradeText, BULK_PRICE } from '../../utils/trades';
+import { useCardLang } from '../../hooks/useCardLang';
 import CardThumb from '../ui/CardThumb';
 import CopyButton from '../ui/CopyButton';
 
 /** Equal-value trades to get one missing card, from the user's surplus copies. */
 const TradeSuggestions = ({ card, foil = false }) => {
   const { decks, prefs } = useStore();
+  const cardLang = useCardLang();
   const collection = useCollection();
   const { status, getPrice, format, source } = usePrices();
   const keep = prefs.tradeKeep ?? 1;
@@ -73,7 +75,7 @@ const TradeSuggestions = ({ card, foil = false }) => {
                 {combo.items.map(({ have, qty }) => (
                   <div key={have.id} className="truncate text-slate-300">
                     {qty > 1 && <span className="text-slate-500">{qty}× </span>}
-                    {have.card.fullName}
+                    {cardLang.fullName(have.card)}
                     {have.foil && <span className="foil-text font-semibold"> foil</span>}
                   </div>
                 ))}
@@ -93,7 +95,8 @@ const TradeSuggestions = ({ card, foil = false }) => {
                 text={buildTradeText(
                   [{ card, foil, qty: 1, price }],
                   combo.items.map(({ have, qty }) => ({ card: have.card, foil: have.foil, qty, price: have.price })),
-                  format
+                  format,
+                  cardLang.fullName
                 )}
                 label=""
                 toast="Proposition d'échange copiée"

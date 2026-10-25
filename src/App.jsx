@@ -216,6 +216,8 @@ const AppContent = () => {
     deckCount: decks.filter((d) => d.kind !== 'reference').length,
     onNavigate: setView,
     onSearch: () => setSearchOpen(true),
+    cardLanguage: prefs.cardLanguage ?? 'fr',
+    onCardLanguage: (lang) => setPref('cardLanguage', lang),
     activeBinderId: view.kind === 'binder' ? (activeBinder?.id ?? null) : null,
     onSelect: setActiveBinder,
     onCreateNew: openCreate,
@@ -228,93 +230,95 @@ const AppContent = () => {
 
   return (
     <StoreContext.Provider value={store}>
-      <CardPreviewProvider onLocate={locateCard}>
-        <div className="flex h-[100dvh] text-slate-100 overflow-hidden bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.08),transparent_60%)]">
-          <Sidebar {...sidebarProps} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <CatalogProvider lang={prefs.cardLanguage}>
+        <CardPreviewProvider onLocate={locateCard}>
+          <div className="flex h-[100dvh] text-slate-100 overflow-hidden bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.08),transparent_60%)]">
+            <Sidebar {...sidebarProps} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-          <main className="flex-1 flex flex-col overflow-hidden min-w-0">
-            {view.kind === 'decks' ? (
-              <DecksView onOpenSidebar={() => setSidebarOpen(true)} onLocate={locateCard} />
-            ) : view.kind === 'stats' ? (
-              <CollectionStatsView onOpenSidebar={() => setSidebarOpen(true)} />
-            ) : view.kind === 'trades' ? (
-              <TradesView onOpenSidebar={() => setSidebarOpen(true)} />
-            ) : view.kind === 'assistant' ? (
-              <Suspense
-                fallback={
-                  <div className="flex-1 flex items-center justify-center text-slate-500">
-                    <Loader2 size={20} className="animate-spin" />
-                  </div>
-                }
-              >
-                <AssistantView onOpenSidebar={() => setSidebarOpen(true)} />
-              </Suspense>
-            ) : activeBinder ? (
-              <BinderView
-                key={activeBinder.id}
-                binder={activeBinder}
-                focusRequest={focusRequest?.binderId === activeBinder.id ? focusRequest : null}
-                pulls={pulls}
-                decks={decks}
-                addHistory={addHistory}
-                prefs={prefs}
-                onSetPref={setPref}
-                onAddCards={addCards}
-                onRemoveCard={removeCard}
-                onSetCounts={setCardCounts}
-                onRemoveLastAdded={removeLastAdded}
-                onHydrateImages={hydrateImages}
-                onBulkMarkExported={bulkMarkExported}
-                onResetExports={resetExports}
-                onEdit={() => openEdit(activeBinder)}
-                onDuplicate={() => handleDuplicate(activeBinder.id)}
-                onDelete={() => requestDelete(activeBinder.id)}
-                onOpenSidebar={() => setSidebarOpen(true)}
-              />
-            ) : (
-              <Welcome onCreate={openCreate} onOpenSidebar={() => setSidebarOpen(true)} />
-            )}
-          </main>
+            <main className="flex-1 flex flex-col overflow-hidden min-w-0">
+              {view.kind === 'decks' ? (
+                <DecksView onOpenSidebar={() => setSidebarOpen(true)} onLocate={locateCard} />
+              ) : view.kind === 'stats' ? (
+                <CollectionStatsView onOpenSidebar={() => setSidebarOpen(true)} />
+              ) : view.kind === 'trades' ? (
+                <TradesView onOpenSidebar={() => setSidebarOpen(true)} />
+              ) : view.kind === 'assistant' ? (
+                <Suspense
+                  fallback={
+                    <div className="flex-1 flex items-center justify-center text-slate-500">
+                      <Loader2 size={20} className="animate-spin" />
+                    </div>
+                  }
+                >
+                  <AssistantView onOpenSidebar={() => setSidebarOpen(true)} />
+                </Suspense>
+              ) : activeBinder ? (
+                <BinderView
+                  key={activeBinder.id}
+                  binder={activeBinder}
+                  focusRequest={focusRequest?.binderId === activeBinder.id ? focusRequest : null}
+                  pulls={pulls}
+                  decks={decks}
+                  addHistory={addHistory}
+                  prefs={prefs}
+                  onSetPref={setPref}
+                  onAddCards={addCards}
+                  onRemoveCard={removeCard}
+                  onSetCounts={setCardCounts}
+                  onRemoveLastAdded={removeLastAdded}
+                  onHydrateImages={hydrateImages}
+                  onBulkMarkExported={bulkMarkExported}
+                  onResetExports={resetExports}
+                  onEdit={() => openEdit(activeBinder)}
+                  onDuplicate={() => handleDuplicate(activeBinder.id)}
+                  onDelete={() => requestDelete(activeBinder.id)}
+                  onOpenSidebar={() => setSidebarOpen(true)}
+                />
+              ) : (
+                <Welcome onCreate={openCreate} onOpenSidebar={() => setSidebarOpen(true)} />
+              )}
+            </main>
 
-          <CardSearchModal isOpen={searchOpen} onClose={() => setSearchOpen(false)} onLocate={locateCard} />
+            <CardSearchModal isOpen={searchOpen} onClose={() => setSearchOpen(false)} onLocate={locateCard} />
 
-          <BinderFormModal
-            isOpen={formState.open}
-            binder={formState.binder}
-            onClose={closeForm}
-            onSubmit={handleFormSubmit}
-          />
+            <BinderFormModal
+              isOpen={formState.open}
+              binder={formState.binder}
+              onClose={closeForm}
+              onSubmit={handleFormSubmit}
+            />
 
-          <ConfirmDialog
-            isOpen={Boolean(pendingDelete)}
-            onClose={() => setPendingDelete(null)}
-            onConfirm={confirmDelete}
-            title="Supprimer la farde ?"
-            message={
-              pendingDelete &&
-              `« ${pendingDelete.name} » et ses ${Object.keys(pendingDelete.cards).length} cartes seront supprimées. Tu pourras annuler pendant quelques secondes.`
-            }
-            confirmLabel="Supprimer"
-            danger
-          />
+            <ConfirmDialog
+              isOpen={Boolean(pendingDelete)}
+              onClose={() => setPendingDelete(null)}
+              onConfirm={confirmDelete}
+              title="Supprimer la farde ?"
+              message={
+                pendingDelete &&
+                `« ${pendingDelete.name} » et ses ${Object.keys(pendingDelete.cards).length} cartes seront supprimées. Tu pourras annuler pendant quelques secondes.`
+              }
+              confirmLabel="Supprimer"
+              danger
+            />
 
-          <ConfirmDialog
-            isOpen={Boolean(pendingImport)}
-            onClose={() => setPendingImport(null)}
-            onConfirm={() => {
-              importState(pendingImport);
-              notify({ tone: 'success', message: `${pendingImport.binders.length} farde(s) restaurée(s)` });
-            }}
-            title="Restaurer la sauvegarde ?"
-            message={
-              pendingImport &&
-              `Tes ${binders.length} farde(s) et ${decks.length} deck(s) actuels seront remplacés par les ${pendingImport.binders.length} farde(s) et ${pendingImport.decks?.length ?? 0} deck(s) du fichier.`
-            }
-            confirmLabel="Restaurer"
-            danger
-          />
-        </div>
-      </CardPreviewProvider>
+            <ConfirmDialog
+              isOpen={Boolean(pendingImport)}
+              onClose={() => setPendingImport(null)}
+              onConfirm={() => {
+                importState(pendingImport);
+                notify({ tone: 'success', message: `${pendingImport.binders.length} farde(s) restaurée(s)` });
+              }}
+              title="Restaurer la sauvegarde ?"
+              message={
+                pendingImport &&
+                `Tes ${binders.length} farde(s) et ${decks.length} deck(s) actuels seront remplacés par les ${pendingImport.binders.length} farde(s) et ${pendingImport.decks?.length ?? 0} deck(s) du fichier.`
+              }
+              confirmLabel="Restaurer"
+              danger
+            />
+          </div>
+        </CardPreviewProvider>
+      </CatalogProvider>
     </StoreContext.Provider>
   );
 };
@@ -323,9 +327,7 @@ const App = () => (
   // Honors the OS "reduce motion" setting for every animation in the app
   <MotionConfig reducedMotion="user">
     <ToastProvider>
-      <CatalogProvider>
-        <AppContent />
-      </CatalogProvider>
+      <AppContent />
     </ToastProvider>
   </MotionConfig>
 );

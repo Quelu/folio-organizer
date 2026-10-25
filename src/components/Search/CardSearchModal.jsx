@@ -7,6 +7,7 @@ import { useStore } from '../../hooks/storeContext';
 import { useCollection } from '../../hooks/useCollection';
 import { matchesQuery, getInk, baseNumber } from '../../utils/catalog';
 import { getLocation } from '../../utils/calculations';
+import { useCardLang } from '../../hooks/useCardLang';
 
 const MAX_RESULTS = 40;
 
@@ -33,6 +34,7 @@ const SearchBody = ({ onLocate }) => {
   const { index, status, loaded, total } = useCatalog();
   const { binders } = useStore();
   const collection = useCollection();
+  const cardLang = useCardLang();
   const [query, setQuery] = useState('');
   const inputRef = useRef(null);
 
@@ -56,7 +58,7 @@ const SearchBody = ({ onLocate }) => {
           ref={inputRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Nom, version, classe, capacité… (ex. elsa, floodborn, 12-42)"
+          placeholder="Nom FR ou EN, classe, capacité… (ex. elsa esprit, floodborn, 12-42)"
           className="field pl-9"
         />
       </div>
@@ -83,7 +85,10 @@ const SearchBody = ({ onLocate }) => {
             <div key={card.id} className="flex gap-3 p-2 rounded-xl bg-white/[0.02] ring-1 ring-inset ring-white/5">
               <CardThumb card={card} className="w-14 flex-shrink-0" dimmed={!entry} />
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-white truncate">{card.fullName}</div>
+                <div className="text-sm font-semibold text-white truncate">{cardLang.fullName(card)}</div>
+                {cardLang.lang === 'fr' && cardLang.fullName(card) !== card.fullName && (
+                  <div className="text-[11px] text-slate-500 truncate">{card.fullName}</div>
+                )}
                 <div className="text-xs text-slate-500 flex items-center gap-1.5 flex-wrap">
                   {card.inks.map((ink) => (
                     <span key={ink} className="w-2 h-2 rounded-full" style={{ background: getInk(ink).color }} />

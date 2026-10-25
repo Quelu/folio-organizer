@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Shuffle, RefreshCw, ArrowDownToLine, Droplet } from 'lucide-react';
 import CardThumb from '../ui/CardThumb';
 import ProgressBar from '../ui/ProgressBar';
+import { useCardLang } from '../../hooks/useCardLang';
 import {
   OPENING_HAND,
   CARDS_BY_TURN_3,
@@ -42,6 +43,7 @@ const ProbRow = ({ label, value }) => (
 
 /** Opening hand simulator (Lorcana mulligan) and exact draw odds for a deck. */
 const HandSimulator = ({ analysis }) => {
+  const cardLang = useCardLang();
   const library = useMemo(() => buildLibrary(analysis.entries), [analysis.entries]);
   const signature = analysis.entries.map((e) => `${e.key}:${e.qty}`).join('|');
   const [game, setGame] = useState(() => deal(library, signature));
@@ -89,7 +91,7 @@ const HandSimulator = ({ analysis }) => {
       .sort((a, b) => b.qty - a.qty || a.name.localeCompare(b.name))
       .map((e) => ({
         key: e.key,
-        name: e.name,
+        name: cardLang.fullName(e.card, e.name),
         qty: e.qty,
         opening: probAtLeast(1, e.qty, size, OPENING_HAND),
         play: probAtLeast(1, e.qty, size, CARDS_BY_TURN_3.play),
@@ -100,7 +102,7 @@ const HandSimulator = ({ analysis }) => {
       cheap: probAtLeast(1, cheap, size, OPENING_HAND),
       cards,
     };
-  }, [analysis.entries, analysis.inkable, size]);
+  }, [analysis.entries, analysis.inkable, size, cardLang]);
 
   if (size === 0) {
     return <p className="text-sm text-slate-500 py-8 text-center">Ajoute des cartes au deck pour simuler une main.</p>;
@@ -154,8 +156,8 @@ const HandSimulator = ({ analysis }) => {
                   type="button"
                   onClick={() => toggle(c.uid)}
                   aria-pressed={isSelected}
-                  aria-label={c.name}
-                  title={c.name}
+                  aria-label={cardLang.fullName(c.card, c.name)}
+                  title={cardLang.fullName(c.card, c.name)}
                   initial={{ opacity: 0, y: -28, rotate: -8, scale: 0.9 }}
                   animate={{ opacity: 1, y: isSelected ? -10 : 0, rotate: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 24, scale: 0.9 }}

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence, useAnimate } from 'motion/react';
 import { Check, Plus, Minus, Sparkles, Layers } from 'lucide-react';
 import TiltCard from '../ui/TiltCard';
+import FoilLayers from '../ui/FoilLayers';
 
 // Images already shown once: no fade-in again when a page is remounted (e.g. after a page turn)
 const loadedImages = new Set();
@@ -112,6 +113,8 @@ const LastAddedTag = ({ compact }) => (
 const GridPocket = ({
   cardNumber,
   cardData,
+  catalogImage,
+  foilMask,
   pulse,
   isHighlighted,
   isLastAdded,
@@ -126,7 +129,7 @@ const GridPocket = ({
 
   const quantity = cardData?.quantity ?? 0;
   const exportedQuantity = cardData?.exportedQuantity ?? 0;
-  const imageUrl = cardData?.imageUrl ?? null;
+  const imageUrl = catalogImage ?? cardData?.imageUrl ?? null;
   const foil = cardData?.foil ?? 0;
   const hasCard = quantity > 0;
   const fullyExported = hasCard && exportedQuantity >= quantity;
@@ -212,19 +215,8 @@ const GridPocket = ({
                   </span>
                 </div>
               )}
-              {/* Permanent holographic sheen on foils */}
-              <AnimatePresence>
-                {foil > 0 && (
-                  <motion.div
-                    key="foil"
-                    aria-hidden
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="foil-sheen pointer-events-none absolute inset-0 z-[4] mix-blend-color-dodge"
-                  />
-                )}
-              </AnimatePresence>
+              {/* Foil finish: real foil through the card's mask, plus a sweep now and then */}
+              {foil > 0 && <FoilLayers mask={foilMask} />}
               {imageUrl && (
                 <span className="absolute bottom-1 right-1 px-1 rounded bg-black/60 text-[10px] font-semibold text-white/80 tabular-nums z-10">
                   {cardNumber}

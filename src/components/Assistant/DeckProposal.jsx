@@ -7,8 +7,9 @@ import { useCatalog } from '../../hooks/catalogContext';
 import { useCollection } from '../../hooks/useCollection';
 import { useToast } from '../ui/toastContext';
 import { resolveProposedCards } from '../../ai/tools';
-import { analyzeDeck, formatDeckList } from '../../utils/deckRules';
+import { analyzeDeck } from '../../utils/deckRules';
 import { getInk } from '../../utils/catalog';
+import { useCardLang } from '../../hooks/useCardLang';
 
 /**
  * A deck proposed by the assistant (propose_deck call): checked against the rules and the
@@ -19,6 +20,7 @@ const DeckProposal = ({ input }) => {
   const { decks, createDeck, updateDeck, setView } = useStore();
   const { index } = useCatalog();
   const collection = useCollection();
+  const cardLang = useCardLang();
   const [open, setOpen] = useState(false);
   const [savedId, setSavedId] = useState(null);
 
@@ -28,7 +30,7 @@ const DeckProposal = ({ input }) => {
     () => ({ name: input?.name ?? 'Deck proposé', format, cards: resolved.cards }),
     [input?.name, format, resolved.cards]
   );
-  const analysis = useMemo(() => analyzeDeck(deck, index, collection), [deck, index, collection]);
+  const analysis = useMemo(() => analyzeDeck(deck, index, collection, cardLang.lang), [deck, index, collection, cardLang.lang]);
   const target = input?.replaces_deck_id ? decks.find((d) => d.id === input.replaces_deck_id) : null;
 
   if (!index) return null;
@@ -104,7 +106,13 @@ const DeckProposal = ({ input }) => {
             <DeckDiff before={target.cards} after={deck.cards} />
           </div>
         ) : (
-          <pre className="mt-2 text-xs text-slate-300 font-mono whitespace-pre-wrap leading-relaxed">{formatDeckList(deck, index)}</pre>
+          <pre className="mt-2 text-xs text-slate-300 font-mono whitespace-pre-wrap leading-relaxed">
+            {analysis.entries
+              .map((e) => ({ qty: e.qty, name: cardLang.fullName(e.card, e.name), cost: e.card?.cost ?? 99 }))
+              .sort((a, b) => a.cost - b.cost || a.name.localeCompare(b.name))
+              .map((e) => `${e.qty} ${e.name}`)
+              .join('\n')}
+          </pre>
         ))}
 
       <div className="flex gap-2 mt-4 flex-wrap">

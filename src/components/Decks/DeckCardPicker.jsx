@@ -4,6 +4,7 @@ import CardThumb from '../ui/CardThumb';
 import { useCatalog } from '../../hooks/catalogContext';
 import { useCollection } from '../../hooks/useCollection';
 import { INKS, matchesQuery, getMainPrinting } from '../../utils/catalog';
+import { useCardLang } from '../../hooks/useCardLang';
 
 const MAX_RESULTS = 50;
 
@@ -24,6 +25,7 @@ const Toggle = ({ checked, onChange, children }) => (
 const DeckCardPicker = ({ deck, deckInks, onAdd }) => {
   const { index } = useCatalog();
   const collection = useCollection();
+  const cardLang = useCardLang();
   const [query, setQuery] = useState('');
   const [ownedOnly, setOwnedOnly] = useState(true);
   const [inks, setInks] = useState([]);
@@ -42,8 +44,10 @@ const DeckCardPicker = ({ deck, deckInks, onAdd }) => {
       seen.add(card.key);
       out.push(getMainPrinting(index, card.key));
     }
-    return out.sort((a, b) => a.cost - b.cost || a.fullName.localeCompare(b.fullName)).slice(0, MAX_RESULTS);
-  }, [index, collection, query, ownedOnly, inks]);
+    return out
+      .sort((a, b) => a.cost - b.cost || cardLang.fullName(a).localeCompare(cardLang.fullName(b)))
+      .slice(0, MAX_RESULTS);
+  }, [index, collection, query, ownedOnly, inks, cardLang]);
 
   const inDeck = (key) => deck.cards.find((c) => c.key === key)?.qty ?? 0;
 
@@ -54,7 +58,7 @@ const DeckCardPicker = ({ deck, deckInks, onAdd }) => {
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Ajouter une carte : nom, classe, capacité…"
+          placeholder="Ajouter une carte : nom FR ou EN, classe, capacité…"
           className="field pl-9"
         />
       </div>
@@ -87,14 +91,14 @@ const DeckCardPicker = ({ deck, deckInks, onAdd }) => {
             <div key={card.key} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-white/[0.03]">
               <CardThumb card={card} className="w-9 flex-shrink-0" />
               <div className="flex-1 min-w-0">
-                <div className="text-sm text-slate-200 truncate">{card.fullName}</div>
+                <div className="text-sm text-slate-200 truncate">{cardLang.fullName(card)}</div>
                 <div className="text-[11px] text-slate-500">
                   {card.inks.join('/')} · {card.cost}
                   {card.inkwell ? ' ⬡' : ''} · {owned ? `${owned} possédée${owned > 1 ? 's' : ''}` : 'non possédée'}
                   {qty > 0 && <span className="text-indigo-300"> · {qty} dans le deck</span>}
                 </div>
               </div>
-              <button onClick={() => onAdd(card)} className="btn-icon" aria-label={`Ajouter ${card.fullName}`} title="Ajouter un exemplaire">
+              <button onClick={() => onAdd(card)} className="btn-icon" aria-label={`Ajouter ${cardLang.fullName(card)}`} title="Ajouter un exemplaire">
                 <Plus size={16} />
               </button>
             </div>

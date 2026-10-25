@@ -23,6 +23,7 @@ import { usePrices } from '../../hooks/usePrices';
 import { useCatalog } from '../../hooks/catalogContext';
 import { getInk, getLegality, FORMATS, CARD_TYPES } from '../../utils/catalog';
 import { getLorcanaSetName, LORCANA_RARITIES } from '../../data/games';
+import { useCardLang } from '../../hooks/useCardLang';
 
 // Same moves as the binder's card sheet: the card flips in, then slides sideways between cards
 const slideVariants = {
@@ -45,25 +46,31 @@ const RARITY_STYLES = {
   Legendary: 'bg-amber-400/15 text-amber-200 ring-amber-300/40',
 };
 
-/** Rules text symbols ({I}, {E}…) drawn as small icons. */
+/** Rules text symbols drawn as small icons: Lorcast's {I} {E}… and LorcanaJSON's ⬡ ⟳… */
 const SYMBOLS = {
-  I: { icon: Hexagon, label: 'encre' },
-  IW: { icon: Hexagon, label: 'encrier' },
-  E: { icon: RotateCw, label: 'épuiser' },
-  S: { icon: Swords, label: 'force' },
-  W: { icon: Shield, label: 'volonté' },
-  L: { icon: Diamond, label: 'lore' },
+  '{I}': { icon: Hexagon, label: 'encre' },
+  '⬡': { icon: Hexagon, label: 'encre' },
+  '{IW}': { icon: Hexagon, label: 'encrier' },
+  '◉': { icon: Hexagon, label: 'encrier' },
+  '{E}': { icon: RotateCw, label: 'épuiser' },
+  '⟳': { icon: RotateCw, label: 'épuiser' },
+  '{S}': { icon: Swords, label: 'force' },
+  '¤': { icon: Swords, label: 'force' },
+  '{W}': { icon: Shield, label: 'volonté' },
+  '⛉': { icon: Shield, label: 'volonté' },
+  '{L}': { icon: Diamond, label: 'lore' },
+  '◊': { icon: Diamond, label: 'lore' },
 };
 
 const RulesLine = ({ line }) => {
-  // Ability names are written in capitals before their effect: "DEEP FREEZE When you play…"
-  const named = line.match(/^([A-Z0-9][A-Z0-9'’!?.,&\- ]*[A-Z0-9!?'’])\s+(?=\S*[a-z])/);
+  // Ability names are written in capitals before their effect: "GEL INTENSE Lorsque vous jouez…"
+  const named = line.match(/^([A-ZÀ-ÖØ-Þ0-9][A-ZÀ-ÖØ-Þ0-9'’!?.,&\- ]*[A-ZÀ-ÖØ-Þ0-9!?'’])\s+(?=\S*[a-zà-ÿ])/);
   const rest = named ? line.slice(named[0].length) : line;
   return (
     <p className="leading-relaxed">
       {named && <b className="font-extrabold text-white tracking-wide">{named[1]} </b>}
-      {rest.split(/(\{[A-Z]+\})/).map((part, i) => {
-        const symbol = SYMBOLS[part.slice(1, -1)];
+      {rest.split(/(\{[A-Z]+\}|[⬡◉⟳¤⛉◊])/).map((part, i) => {
+        const symbol = SYMBOLS[part];
         if (!symbol) return part;
         return (
           <symbol.icon
@@ -105,6 +112,8 @@ const RarityBadge = ({ rarity }) => {
 /** Text about the card: identity, stats, rules, where the user's copies are, price, legality. */
 const CardInfo = ({ card, foil, onLocate, onOpenDeck, onClose }) => {
   const { decks } = useStore();
+  const cardLang = useCardLang();
+  const text = cardLang.localize(card);
   const { index } = useCatalog();
   const collection = useCollection();
   const prices = usePrices();
@@ -123,8 +132,11 @@ const CardInfo = ({ card, foil, onLocate, onOpenDeck, onClose }) => {
           <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
             {getLorcanaSetName(card.set) ?? `Chapitre ${card.set}`} · n° {card.number}
           </div>
-          <h2 className="text-2xl sm:text-3xl font-black text-white leading-tight mt-1">{card.name}</h2>
-          {card.version && <p className="text-base sm:text-lg text-slate-300 leading-snug">{card.version}</p>}
+          <h2 className="text-2xl sm:text-3xl font-black text-white leading-tight mt-1">{text.name}</h2>
+          {text.version && <p className="text-base sm:text-lg text-slate-300 leading-snug">{text.version}</p>}
+          {cardLang.lang === 'fr' && text.fullName !== card.fullName && (
+            <p className="text-xs text-slate-500 mt-1">{card.fullName}</p>
+          )}
         </div>
         <button onClick={onClose} className="btn-icon -mr-2 -mt-1" aria-label="Fermer" title="Fermer (Esc)">
           <X size={18} />
@@ -156,7 +168,7 @@ const CardInfo = ({ card, foil, onLocate, onOpenDeck, onClose }) => {
 
       <motion.p variants={infoItem} className="text-xs text-slate-400">
         <span className="text-slate-200 font-medium">{typeLabel}</span>
-        {card.classifications.length > 0 && <> · {card.classifications.join(' · ')}</>}
+        {text.classifications.length > 0 && <> · {text.classifications.join(' · ')}</>}
       </motion.p>
 
       {(isCharacter || card.lore != null || card.moveCost != null) && (
@@ -168,14 +180,17 @@ const CardInfo = ({ card, foil, onLocate, onOpenDeck, onClose }) => {
         </motion.div>
       )}
 
-      {card.text && (
+      {(text.text || text.flavor) && (
         <motion.div
           variants={infoItem}
           className="rounded-xl bg-gradient-to-br from-white/[0.05] to-white/[0.02] ring-1 ring-inset ring-white/[0.07] px-4 py-3 text-sm text-slate-300 space-y-2"
         >
-          {card.text.split('\n').map((line, i) => (
+          {text.text?.split('\n').map((line, i) => (
             <RulesLine key={i} line={line} />
           ))}
+          {text.flavor && (
+            <p className={`italic text-slate-500 leading-relaxed ${text.text ? 'pt-2 border-t border-white/5' : ''}`}>{text.flavor}</p>
+          )}
         </motion.div>
       )}
 
@@ -261,15 +276,15 @@ const CardInfo = ({ card, foil, onLocate, onOpenDeck, onClose }) => {
   );
 };
 
-/** Lorcast serves each picture in normal and large sizes: the large one for sharp screens. */
-const largeImage = (url) => url?.replace('/digital/normal/', '/digital/large/');
-
 /**
  * Full-screen card view opened from any thumbnail: the binder sheet's flip-in, pointer tilt,
  * holographic glare and foil sheen, with the card's details and the user's copies.
  */
 const CardPreview = ({ state, onClose, onNavigate, onLocate, onOpenDeck }) => {
+  const cardLang = useCardLang();
   const card = state?.cards[state.index];
+  const image = card ? cardLang.image(card, 'normal') : null;
+  const large = card ? cardLang.image(card, 'large') : null;
   const count = state?.cards.length ?? 0;
   const foil = Boolean(card && state.foilIds.has(card.id));
   const glow = card?.inks.map((ink) => getInk(ink).color) ?? [];
@@ -314,7 +329,7 @@ const CardPreview = ({ state, onClose, onNavigate, onLocate, onOpenDeck }) => {
             <motion.div
               role="dialog"
               aria-modal="true"
-              aria-label={card.fullName}
+              aria-label={cardLang.fullName(card)}
               initial={{ opacity: 0, y: 40 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 40, transition: { duration: 0.18 } }}
@@ -358,22 +373,21 @@ const CardPreview = ({ state, onClose, onNavigate, onLocate, onOpenDeck }) => {
                       >
                         <TiltCard
                           max={18}
+                          foil={foil}
+                          foilMask={cardLang.foilMask(card)}
                           className="pocket-shine aspect-[5/7] rounded-[18px] overflow-hidden ring-1 ring-white/15 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.9)] bg-slate-900"
                         >
-                          {foil && (
-                            <div aria-hidden className="foil-sheen pointer-events-none absolute inset-0 z-[4] mix-blend-color-dodge" />
-                          )}
-                          {card.image ? (
+                          {image ? (
                             <img
-                              src={card.image}
-                              srcSet={`${card.image} 1x, ${largeImage(card.image)} 2x`}
-                              alt={card.fullName}
+                              src={image}
+                              srcSet={large && large !== image ? `${image} 1x, ${large} 2x` : undefined}
+                              alt={cardLang.fullName(card)}
                               draggable={false}
                               className="absolute inset-0 w-full h-full object-cover select-none"
                             />
                           ) : (
                             <div className="absolute inset-0 flex items-center justify-center p-6 text-center text-lg font-bold text-slate-400">
-                              {card.fullName}
+                              {cardLang.fullName(card)}
                             </div>
                           )}
                         </TiltCard>

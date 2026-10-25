@@ -1,12 +1,14 @@
 import { motion, useMotionValue, useSpring, useTransform, useMotionTemplate } from 'motion/react';
+import FoilLayers from './FoilLayers';
 
 const SPRING = { stiffness: 260, damping: 26, mass: 0.6 };
 
 /**
  * Card surface that tilts toward the pointer with a holographic glare, like a foil TCG card.
  * Touch input is ignored so scrolling on phones stays smooth.
+ * foil: adds the foil finish, lit through foilMask when the picture has one, following the pointer.
  */
-const TiltCard = ({ children, className = '', max = 12, disabled = false, style, ...rest }) => {
+const TiltCard = ({ children, className = '', max = 12, disabled = false, foil = false, foilMask = null, style, ...rest }) => {
   const px = useMotionValue(0.5);
   const py = useMotionValue(0.5);
   const hover = useMotionValue(0);
@@ -22,6 +24,8 @@ const TiltCard = ({ children, className = '', max = 12, disabled = false, style,
   const glare = useMotionTemplate`radial-gradient(circle at ${gx}% ${gy}%, rgba(255,255,255,0.45), rgba(255,255,255,0) 55%)`;
   const foilPos = useMotionTemplate`${foilX}% 50%`;
   const foilOpacity = useTransform(glow, (v) => v * 0.55);
+  const realFoilPos = useMotionTemplate`${gx}% ${gy}%`;
+  const realFoilOpacity = useTransform(glow, (v) => 0.45 + v * 0.35);
 
   const reset = () => {
     px.set(0.5);
@@ -46,6 +50,7 @@ const TiltCard = ({ children, className = '', max = 12, disabled = false, style,
       className={`relative ${className}`}
     >
       {children}
+      {foil && <FoilLayers mask={foilMask} position={realFoilPos} intensity={realFoilOpacity} />}
       {!disabled && (
         <>
           <motion.div

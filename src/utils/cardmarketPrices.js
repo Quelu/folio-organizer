@@ -18,7 +18,8 @@ const groupBy = (items, getKey) => {
 /**
  * Matches Cardmarket prices to catalog printings.
  *
- * Cardmarket products carry no collector number, only "Name - Version" and an expansion id.
+ * Printings with a Cardmarket id (from LorcanaJSON) get their product's price directly. For the
+ * others, Cardmarket products carry no collector number, only "Name - Version" and an expansion id.
  * Each Lorcast set is paired with the expansion sharing the most card names; inside it, the
  * printings of a same card (regular, Enchanted, Epic…) are paired in order: idProduct order on
  * Cardmarket, collector number order on Lorcast.
@@ -30,9 +31,20 @@ const groupBy = (items, getKey) => {
  */
 export const matchCardmarketPrices = (products, priceGuides, index) => {
   const guides = new Map(priceGuides.map((g) => [g.idProduct, g]));
+  const prices = new Map();
+  // Cards whose Cardmarket product is known (LorcanaJSON): exact price, no name matching
+  for (const card of index.all) {
+    const guide = card.cardmarketId ? guides.get(card.cardmarketId) : null;
+    if (guide) {
+      prices.set(card.id, {
+        eur: positive(guide.trend, guide.avg30),
+        eurFoil: positive(guide['trend-foil'], guide['avg30-foil']),
+      });
+    }
+  }
+
   const named = products.map((p) => ({ ...p, key: normalizeName(p.name) }));
   const byExpansion = groupBy(named, (p) => p.idExpansion);
-  const prices = new Map();
 
   for (const cards of index.bySet.values()) {
     const keys = new Set(cards.map((c) => c.key));
@@ -60,7 +72,7 @@ export const matchCardmarketPrices = (products, priceGuides, index) => {
       const matching = productGroups.get(key) ?? [];
       group.slice(0, matching.length).forEach((card, i) => {
         const guide = guides.get(matching[i].idProduct);
-        if (!guide) return;
+        if (!guide || prices.has(card.id)) return;
         prices.set(card.id, {
           eur: positive(guide.trend, guide.avg30),
           eurFoil: positive(guide['trend-foil'], guide['avg30-foil']),

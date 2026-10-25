@@ -27,6 +27,7 @@ import { useCatalog } from '../../hooks/catalogContext';
 import { useCollection } from '../../hooks/useCollection';
 import { analyzeDeck, changeDeckCard, formatDeckList, getMaxCopies } from '../../utils/deckRules';
 import { getInk, getMainType, CARD_TYPES, FORMATS } from '../../utils/catalog';
+import { useCardLang } from '../../hooks/useCardLang';
 
 const TABS = [
   { key: 'list', label: 'Liste' },
@@ -38,7 +39,9 @@ const TABS = [
 
 /** One deck line: picture, name, cost, owned copies and a quantity stepper. */
 const DeckRow = ({ entry, rotating, onChange }) => {
-  const { card, qty, owned, name } = entry;
+  const cardLang = useCardLang();
+  const { card, qty, owned } = entry;
+  const name = cardLang.fullName(card, entry.name);
   const short = owned < qty;
   return (
     <div className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-white/[0.03]">
@@ -82,7 +85,8 @@ const DeckEditor = ({ deck, onBack, onOpenSidebar, onLocate, onDelete }) => {
   const { index } = useCatalog();
   const collection = useCollection();
   const [tab, setTab] = useState('list');
-  const analysis = useMemo(() => analyzeDeck(deck, index, collection), [deck, index, collection]);
+  const cardLang = useCardLang();
+  const analysis = useMemo(() => analyzeDeck(deck, index, collection, cardLang.lang), [deck, index, collection, cardLang.lang]);
   const rotatingKeys = new Set(analysis.rotating.map((e) => e.key));
 
   const setCards = (cards) => updateDeck(deck.id, { cards });
@@ -90,7 +94,11 @@ const DeckEditor = ({ deck, onBack, onOpenSidebar, onLocate, onDelete }) => {
     ...t,
     entries: analysis.entries
       .filter((e) => (e.card ? getMainType(e.card) : 'Character') === t.key)
-      .sort((a, b) => (a.card?.cost ?? 99) - (b.card?.cost ?? 99) || a.name.localeCompare(b.name)),
+      .sort(
+        (a, b) =>
+          (a.card?.cost ?? 99) - (b.card?.cost ?? 99) ||
+          cardLang.fullName(a.card, a.name).localeCompare(cardLang.fullName(b.card, b.name))
+      ),
   })).filter((g) => g.entries.length);
 
   return (
@@ -217,7 +225,9 @@ const DeckEditor = ({ deck, onBack, onOpenSidebar, onLocate, onDelete }) => {
               <section data-preview-group>
                 <div className="flex items-center justify-between mb-2">
                   <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Deck</h2>
-                  <CopyButton text={formatDeckList(deck, index)} label="Copier la liste" toast="Liste copiée" />
+                  <span title="Noms anglais, le format de Dreamborn, Inktable et Pixelborn">
+                    <CopyButton text={formatDeckList(deck, index)} label="Copier la liste" toast="Liste copiée (noms anglais)" />
+                  </span>
                 </div>
                 {groups.length === 0 && (
                   <p className="text-sm text-slate-500 py-6">Deck vide : ajoute des cartes avec la recherche.</p>

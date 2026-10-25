@@ -4,6 +4,7 @@ import {
   getLegality,
   getCoreSets,
   getMainType,
+  localizeCard,
   FORMATS,
 } from './catalog.js';
 import { getOwned } from './collection.js';
@@ -37,8 +38,10 @@ export const getEntryCard = (index, entry) => (index ? (index.byId.get(entry.id)
  * @param {object} deck
  * @param {object|null} index catalog index (rules needing card data are skipped without it)
  * @param {object|null} collection from buildCollection, for owned / missing counts
+ * @param {'fr'|'en'} [lang] language of the card names in the messages
  */
-export const analyzeDeck = (deck, index, collection = null) => {
+export const analyzeDeck = (deck, index, collection = null, lang = 'en') => {
+  const nameOf = (e) => (e.card ? localizeCard(e.card, lang).fullName : e.name);
   const entries = deck.cards.map((entry) => {
     const card = getEntryCard(index, entry);
     const owned = collection ? getOwned(collection, entry.key) : 0;
@@ -67,7 +70,7 @@ export const analyzeDeck = (deck, index, collection = null) => {
   }
   for (const e of entries) {
     const max = getMaxCopies(e.card);
-    if (e.qty > max) errors.push({ code: 'copies', key: e.key, message: `${e.name} : ${e.qty} copies (max ${max}).` });
+    if (e.qty > max) errors.push({ code: 'copies', key: e.key, message: `${nameOf(e)} : ${e.qty} copies (max ${max}).` });
   }
   if (inks.length > MAX_INKS) {
     errors.push({ code: 'inks', message: `${inks.length} encres (${inks.join(', ')}) : ${MAX_INKS} maximum.` });
@@ -95,7 +98,7 @@ export const analyzeDeck = (deck, index, collection = null) => {
       errors.push({
         code: 'legality',
         key: entry.key,
-        message: `${entry.name} : ${status === 'banned' ? 'bannie' : 'non légale'} en ${deck.format === 'core' ? 'Core' : 'Infinity'}.`,
+        message: `${nameOf(entry)} : ${status === 'banned' ? 'bannie' : 'non légale'} en ${deck.format === 'core' ? 'Core' : 'Infinity'}.`,
       });
     }
     if (deck.format === 'core' && rotating.length) {
@@ -158,21 +161,27 @@ const LINE_PATTERNS = [
   /^(.+?)\s+[x×]\s*(\d+)$/i, // "Name x4"
 ];
 
-/** Finds the catalog card a pasted name refers to. */
+/** Finds the catalog card a pasted name refers to, written in English or in French. */
 const resolveName = (index, rawName) => {
   const cleaned = rawName
     .replace(/\(V\.\d+\)/gi, '') // Cardmarket version marker
     .replace(/\s*\([^)]*\)\s*$/, '') // trailing set name or code
     .replace(/\s+#?\d+[a-z]?\s*$/i, '') // trailing collector number
     .trim();
+  const french = index.byFrenchKey ?? new Map();
   for (const candidate of [rawName, cleaned]) {
     const key = normalizeName(candidate);
     if (index.byKey.has(key)) return key;
+    if (french.has(key)) return french.get(key);
   }
   // Name without version, when only one card has that name
   const key = normalizeName(cleaned);
-  const matches = [...index.byKey.keys()].filter((k) => k === key || k.startsWith(`${key} - `));
-  return matches.length === 1 ? matches[0] : null;
+  const prefix = (k) => k === key || k.startsWith(`${key} - `);
+  const matches = new Set([
+    ...[...index.byKey.keys()].filter(prefix),
+    ...[...french.entries()].filter(([k]) => prefix(k)).map(([, englishKey]) => englishKey),
+  ]);
+  return matches.size === 1 ? [...matches][0] : null;
 };
 
 /**

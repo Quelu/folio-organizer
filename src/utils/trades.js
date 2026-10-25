@@ -141,8 +141,8 @@ export const suggestTrades = (targetValue, haves, { tolerance = 0.15, maxCards =
     .map(({ items, total, diff }) => ({ items, total, diff }));
 };
 
-const describe = ({ card, foil, qty }) =>
-  `${qty}× ${card.fullName}${foil ? ' (foil)' : ''} · chapitre ${card.set} n° ${card.number}`;
+const describe = ({ card, foil, qty }, nameOf) =>
+  `${qty}× ${nameOf(card)}${foil ? ' (foil)' : ''} · chapitre ${card.set} n° ${card.number}`;
 
 /**
  * Trade proposal to paste in a message.
@@ -150,8 +150,8 @@ const describe = ({ card, foil, qty }) =>
  * @param {{ card, foil, qty, price }[]} offers
  * @param {(value: number|null) => string} format
  */
-export const buildTradeText = (wants, offers, format) => {
-  const line = (item) => `- ${describe(item)} — ${format(item.price == null ? null : item.price * item.qty)}`;
+export const buildTradeText = (wants, offers, format, nameOf = (card) => card.fullName) => {
+  const line = (item) => `- ${describe(item, nameOf)} — ${format(item.price == null ? null : item.price * item.qty)}`;
   const total = (items) => items.reduce((s, i) => s + (i.price ?? 0) * i.qty, 0);
   return [
     'Je cherche :',

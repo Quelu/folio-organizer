@@ -2,7 +2,7 @@
 
 Petit serveur [MCP](https://modelcontextprotocol.io) local qui donne à Claude Desktop (ou à tout client MCP) un accès en lecture à ta collection Folio : fardes, cartes, emplacements dans les fardes, decks et cartes sorties pour un deck. Tu peux ainsi poser tes questions à Claude avec ton abonnement, sans clé API.
 
-Il lit la **dernière sauvegarde** faite depuis Folio et le catalogue de cartes [Lorcast](https://lorcast.com). Il réutilise les règles de l'app (collection multi-fardes, règles de construction de deck, liste de collecte) : les réponses sont les mêmes que dans Folio.
+Il lit la **dernière sauvegarde** faite depuis Folio, le catalogue de cartes [Lorcast](https://lorcast.com) et les noms et textes français de [LorcanaJSON](https://lorcanajson.org). Les cartes sont citées en français, avec leur nom anglais entre parenthèses. Il réutilise les règles de l'app (collection multi-fardes, règles de construction de deck, liste de collecte) : les réponses sont les mêmes que dans Folio.
 
 Rien n'est modifié : le serveur ne fait que lire.
 
@@ -80,4 +80,4 @@ Les prix viennent de Lorcast (TCGplayer, en dollars) : c'est un ordre de grandeu
 
 ## Cache
 
-Le catalogue Lorcast est téléchargé au premier lancement (un chapitre à la fois) puis gardé deux jours dans `~/.cache/folio-mcp/catalog.json`. Hors ligne, le serveur utilise le dernier catalogue en cache.
+Le catalogue Lorcast (un chapitre à la fois) et les textes français de LorcanaJSON sont téléchargés au premier lancement, puis gardés deux jours dans `~/.cache/folio-mcp/catalog.json`. Hors ligne, le serveur utilise le dernier catalogue en cache.

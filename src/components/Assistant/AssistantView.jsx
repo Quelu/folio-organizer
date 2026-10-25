@@ -196,9 +196,10 @@ const AssistantView = ({ onOpenSidebar }) => {
             decks,
             index,
             includeReferences,
+            lang: prefs.cardLanguage ?? 'fr',
           })
         : null,
-    [conversation, index, binders, scope, collection, decks, includeReferences]
+    [conversation, index, binders, scope, collection, decks, includeReferences, prefs.cardLanguage]
   );
   const estimate = pendingSystem ? estimateTokens(pendingSystem.map((b) => b.text).join('')) : 0;
 

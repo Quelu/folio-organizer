@@ -9,6 +9,7 @@ import { useCollection } from '../../hooks/useCollection';
 import { useToast } from '../ui/toastContext';
 import { parseDeckList, analyzeDeck } from '../../utils/deckRules';
 import { FORMATS } from '../../utils/catalog';
+import { useCardLang } from '../../hooks/useCardLang';
 
 const PLACEHOLDER = `4 Elsa - Spirit of Winter
 4 Be Our Guest
@@ -21,6 +22,7 @@ const ImportBody = ({ initialKind, onClose, onSaved }) => {
   const { index, loaded, total } = useCatalog();
   const { createDeck } = useStore();
   const collection = useCollection();
+  const cardLang = useCardLang();
   const [text, setText] = useState('');
   const [name, setName] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
@@ -28,8 +30,8 @@ const ImportBody = ({ initialKind, onClose, onSaved }) => {
 
   const parsed = useMemo(() => (index && text.trim() ? parseDeckList(text, index) : null), [index, text]);
   const analysis = useMemo(
-    () => (parsed ? analyzeDeck({ cards: parsed.cards, format }, index, collection) : null),
-    [parsed, format, index, collection]
+    () => (parsed ? analyzeDeck({ cards: parsed.cards, format }, index, collection, cardLang.lang) : null),
+    [parsed, format, index, collection, cardLang.lang]
   );
 
   const save = (kind) => {
