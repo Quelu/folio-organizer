@@ -163,6 +163,7 @@ const HandSimulator = ({ analysis }) => {
                   className={`relative rounded-lg text-left ${canMulligan ? 'cursor-pointer' : 'cursor-default'}`}
                 >
                   <CardThumb
+                    preview={false}
                     card={c.card ?? { fullName: c.name, inks: [] }}
                     className={isSelected ? 'ring-2 ring-amber-400 shadow-[0_0_18px_rgba(251,191,36,0.45)]' : ''}
                     dimmed={isSelected}

@@ -73,7 +73,7 @@ const SearchBody = ({ onLocate }) => {
         </p>
       )}
 
-      <div className="mt-4 space-y-2 max-h-[60vh] overflow-y-auto scrollbar-thin -mx-2 px-2">
+      <div data-preview-group className="mt-4 space-y-2 max-h-[60vh] overflow-y-auto scrollbar-thin -mx-2 px-2">
         {results.map((card) => {
           const entry = collection.entries.get(card.key);
           const copies = entry?.copies.filter((c) => c.card.id === card.id) ?? [];

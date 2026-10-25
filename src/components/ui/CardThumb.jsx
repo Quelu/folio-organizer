@@ -1,17 +1,43 @@
 import { useState } from 'react';
 import { getInk } from '../../utils/catalog';
+import { useCardPreview } from '../CardPreview/cardPreviewContext';
 
-/** Card picture from the catalog, with the card name on a tinted background until it loads. */
-const CardThumb = ({ card, size = 'small', className = '', dimmed = false }) => {
+/**
+ * Card picture from the catalog, with the card name on a tinted background until it loads.
+ * Clicking it opens the full card view (preview={false} where the click already does something).
+ */
+const CardThumb = ({ card, size = 'small', className = '', dimmed = false, foil = false, preview = true }) => {
   const [loaded, setLoaded] = useState(false);
+  const cardPreview = useCardPreview();
   const src = size === 'small' ? (card?.imageSmall ?? card?.image) : card?.image;
   const tint = getInk(card?.inks?.[0]).color;
+  const canPreview = Boolean(preview && cardPreview && card?.id);
+
+  const openPreview = (e) => {
+    // Rows holding thumbnails can be labels or clickable: the thumbnail click is only a preview
+    e.preventDefault();
+    e.stopPropagation();
+    cardPreview.open(card, { foil, origin: e.currentTarget });
+  };
 
   return (
     <div
-      className={`relative aspect-[5/7] rounded-lg overflow-hidden ring-1 ring-white/10 bg-slate-900 ${
-        dimmed ? 'opacity-50 grayscale' : ''
-      } ${className}`}
+      {...(canPreview && {
+        role: 'button',
+        tabIndex: 0,
+        onClick: openPreview,
+        onKeyDown: (e) => {
+          if (e.key === 'Enter' || e.key === ' ') openPreview(e);
+        },
+        'aria-label': `Voir ${card.fullName} en grand`,
+        'data-preview-id': card.id,
+        'data-preview-foil': foil || undefined,
+      })}
+      className={`relative aspect-[5/7] rounded-lg overflow-hidden ring-1 ring-white/10 bg-slate-900 pocket-shine ${
+        canPreview
+          ? 'cursor-zoom-in outline-none transition-[transform,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:scale-[1.06] hover:z-10 hover:ring-white/40 hover:shadow-lg hover:shadow-black/60 focus-visible:ring-2 focus-visible:ring-indigo-400'
+          : ''
+      } ${dimmed ? 'opacity-50 grayscale' : ''} ${className}`}
       style={{ backgroundImage: `linear-gradient(160deg, ${tint}33, transparent 70%)` }}
     >
       {!loaded && (
@@ -31,6 +57,7 @@ const CardThumb = ({ card, size = 'small', className = '', dimmed = false }) => 
           }`}
         />
       )}
+      {foil && <div aria-hidden className="foil-sheen pointer-events-none absolute inset-0 mix-blend-color-dodge" />}
     </div>
   );
 };

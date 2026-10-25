@@ -51,7 +51,7 @@ const TradeSuggestions = ({ card, foil = false }) => {
           {haves.length === 0 && ' Tu n’as pas de doubles à échanger pour l’instant.'}
         </p>
       ) : (
-        <ul className="space-y-2">
+        <ul data-preview-group className="space-y-2">
           {combos.map((combo) => (
             <li
               key={combo.items.map((i) => `${i.have.id}x${i.qty}`).join(',')}
@@ -60,7 +60,7 @@ const TradeSuggestions = ({ card, foil = false }) => {
               <div className="flex -space-x-3 flex-shrink-0">
                 {combo.items.map(({ have, qty }) => (
                   <div key={have.id} className="relative w-9">
-                    <CardThumb card={have.card} className="shadow-md shadow-black/50" />
+                    <CardThumb card={have.card} foil={have.foil} className="shadow-md shadow-black/50" />
                     {qty > 1 && (
                       <span className="absolute -top-1 -right-1 bg-indigo-500 text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 px-1 leading-4 text-center tabular-nums">
                         ×{qty}

@@ -64,7 +64,7 @@ const Row = ({ item, selected, onChange, format }) => {
         className="w-4 h-4 accent-indigo-500 flex-shrink-0"
         aria-label={`Sélectionner ${card.fullName}`}
       />
-      <CardThumb card={card} className="w-8 flex-shrink-0" />
+      <CardThumb card={card} foil={foil} className="w-8 flex-shrink-0" />
       <div className="flex-1 min-w-0 leading-tight">
         <div className="text-sm text-slate-200 truncate">
           {card.fullName}
@@ -105,7 +105,7 @@ const Panel = ({ title, hint, items, selection, onSelect, format, empty, actions
   const count = items.reduce((s, i) => s + (selection[i.id] ?? 0), 0);
 
   return (
-    <section className="rounded-2xl bg-white/[0.02] ring-1 ring-inset ring-white/5 p-3 sm:p-4 flex flex-col min-h-0">
+    <section data-preview-group className="rounded-2xl bg-white/[0.02] ring-1 ring-inset ring-white/5 p-3 sm:p-4 flex flex-col min-h-0">
       <div className="flex items-baseline justify-between gap-3 mb-1">
         <h2 className="text-sm font-semibold text-white">{title}</h2>
         <span className="text-xs text-slate-400 tabular-nums">

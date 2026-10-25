@@ -79,7 +79,7 @@ const DeckCardPicker = ({ deck, deckInks, onAdd }) => {
         )}
       </div>
 
-      <div className="space-y-1 max-h-[420px] overflow-y-auto scrollbar-thin -mx-1 px-1">
+      <div data-preview-group className="space-y-1 max-h-[420px] overflow-y-auto scrollbar-thin -mx-1 px-1">
         {results.map((card) => {
           const owned = collection.entries.get(card.key)?.total ?? 0;
           const qty = inDeck(card.key);

@@ -15,7 +15,7 @@ const PLAYSET = 4;
 const LIST_STEP = 48;
 
 const Section = ({ icon: Icon, title, hint, action, children }) => (
-  <section className="rounded-2xl bg-white/[0.03] ring-1 ring-inset ring-white/5 p-4 sm:p-5">
+  <section data-preview-group className="rounded-2xl bg-white/[0.03] ring-1 ring-inset ring-white/5 p-4 sm:p-5">
     <div className="flex items-start justify-between gap-3 mb-4">
       <div className="min-w-0">
         <h2 className="flex items-center gap-2 text-sm font-semibold text-white">

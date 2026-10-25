@@ -43,7 +43,7 @@ const PullList = ({ deck, onLocate }) => {
   };
 
   return (
-    <div className="space-y-6">
+    <div data-preview-group className="space-y-6">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <p className="text-sm text-slate-400">
           {toTake > 0 ? (

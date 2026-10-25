@@ -54,7 +54,7 @@ const MissingCards = ({ entries }) => {
         <span className="text-[11px] text-slate-500">Prix : {prices.source}</span>
       </div>
 
-      <div className="space-y-1">
+      <div data-preview-group className="space-y-1">
         {priced.map((e) => (
           <div key={e.key} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-white/[0.03]">
             {e.buyCard && <CardThumb card={e.buyCard} className="w-8 flex-shrink-0" />}

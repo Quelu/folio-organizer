@@ -214,7 +214,7 @@ const DeckEditor = ({ deck, onBack, onOpenSidebar, onLocate, onDelete }) => {
         <div className="max-w-6xl mx-auto">
           {tab === 'list' && (
             <div className="grid md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_300px] gap-6">
-              <section>
+              <section data-preview-group>
                 <div className="flex items-center justify-between mb-2">
                   <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Deck</h2>
                   <CopyButton text={formatDeckList(deck, index)} label="Copier la liste" toast="Liste copiée" />
