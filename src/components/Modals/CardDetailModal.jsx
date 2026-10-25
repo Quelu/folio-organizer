@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, Minus, Plus, Trash2, Check, X, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Minus, Plus, Trash2, Check, X, Sparkles, Layers, ArrowLeftRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { fetchLorcastCard } from '../../utils/lorcastApi';
 import { getLocation } from '../../utils/calculations';
 import { getGame } from '../../data/games';
 import TiltCard from '../ui/TiltCard';
 import { getCounts } from '../../utils/cards';
+import { useCatalog } from '../../hooks/catalogContext';
+import { findPocketCard } from '../../utils/catalog';
+import TradeSuggestions from '../Trades/TradeSuggestions';
 
 /** Image for the detail view: owned cards already have one, others are previewed from Lorcast. */
 const useCardImage = (binder, cardNumber) => {
@@ -82,7 +85,7 @@ const Stat = ({ label, value }) => (
   </div>
 );
 
-const CardDetailModal = ({ binder, cardNumber, onClose, onNavigate, onSetCounts }) => {
+const CardDetailModal = ({ binder, cardNumber, pulled, onClose, onNavigate, onSetCounts }) => {
   const isOpen = cardNumber != null;
 
   useEffect(() => {
@@ -129,6 +132,7 @@ const CardDetailModal = ({ binder, cardNumber, onClose, onNavigate, onSetCounts 
               <DetailBody
                 binder={binder}
                 cardNumber={cardNumber}
+                pulled={pulled}
                 onClose={onClose}
                 onNavigate={onNavigate}
                 onSetCounts={onSetCounts}
@@ -141,7 +145,7 @@ const CardDetailModal = ({ binder, cardNumber, onClose, onNavigate, onSetCounts 
   );
 };
 
-const DetailBody = ({ binder, cardNumber, onClose, onNavigate, onSetCounts }) => {
+const DetailBody = ({ binder, cardNumber, pulled, onClose, onNavigate, onSetCounts }) => {
   // Direction of the last card change, to slide the visual the right way
   const [nav, setNav] = useState({ card: cardNumber, dir: 0 });
   if (nav.card !== cardNumber) setNav({ card: cardNumber, dir: cardNumber > nav.card ? 1 : -1 });
@@ -153,6 +157,8 @@ const DetailBody = ({ binder, cardNumber, onClose, onNavigate, onSetCounts }) =>
   const imageUrl = useCardImage(binder, cardNumber);
   const game = getGame(binder.gameType);
   const outOfSet = binder.setSize && cardNumber > binder.setSize;
+  const { index } = useCatalog();
+  const catalogCard = index && binder.gameType === 'lorcana' ? findPocketCard(index, binder.setCode, cardNumber) : null;
 
   return (
     <div className="flex flex-col sm:flex-row gap-6 p-5 sm:p-6">
@@ -217,6 +223,12 @@ const DetailBody = ({ binder, cardNumber, onClose, onNavigate, onSetCounts }) =>
           <div>
             <div className="text-xs uppercase tracking-wider text-slate-500">{binder.name}</div>
             <h2 className="text-3xl font-black text-white tabular-nums">#{cardNumber}</h2>
+            {catalogCard && (
+              <p className="text-sm text-slate-300 leading-snug">
+                {catalogCard.fullName}
+                <span className="text-slate-500"> · {catalogCard.rarity?.replace('_', ' ')}</span>
+              </p>
+            )}
           </div>
           <div className="flex items-center -mr-2">
             <button
@@ -296,6 +308,22 @@ const DetailBody = ({ binder, cardNumber, onClose, onNavigate, onSetCounts }) =>
             </p>
           )}
         </div>
+
+        {pulled?.length > 0 && (
+          <p className="mt-3 flex items-center gap-1.5 text-xs text-sky-300">
+            <Layers size={13} />
+            Sortie pour {pulled.map((p) => `« ${p.deckName} » (${p.qty})`).join(', ')}
+          </p>
+        )}
+
+        {catalogCard && quantity === 0 && (
+          <div className="mt-5">
+            <span className="label flex items-center gap-1.5">
+              <ArrowLeftRight size={12} /> L'obtenir par échange
+            </span>
+            <TradeSuggestions card={catalogCard} />
+          </div>
+        )}
 
         <div className="mt-auto pt-5 hidden sm:flex gap-3 text-[11px] text-slate-500">
           <span>

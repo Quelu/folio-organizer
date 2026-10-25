@@ -1,8 +1,12 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { X } from 'lucide-react';
 
-/** Shared modal shell: backdrop, Escape to close, title bar. */
+/**
+ * Shared modal shell: backdrop, Escape to close, title bar. Rendered in <body> so a modal opened
+ * from another one is not positioned inside its (transformed) parent.
+ */
 const Modal = ({ isOpen, onClose, title, children, size = 'md' }) => {
   useEffect(() => {
     if (!isOpen) return;
@@ -15,7 +19,7 @@ const Modal = ({ isOpen, onClose, title, children, size = 'md' }) => {
 
   const width = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-2xl' }[size];
 
-  return (
+  return createPortal(
     <AnimatePresence>
       {isOpen && (
         <>
@@ -50,7 +54,8 @@ const Modal = ({ isOpen, onClose, title, children, size = 'md' }) => {
           </div>
         </>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 };
 

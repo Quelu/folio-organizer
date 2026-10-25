@@ -77,3 +77,26 @@ export const splitWantsLists = (lines) =>
   Array.from({ length: Math.ceil(lines.length / CARDMARKET_MAX_ENTRIES) }, (_, i) =>
     lines.slice(i * CARDMARKET_MAX_ENTRIES, (i + 1) * CARDMARKET_MAX_ENTRIES)
   );
+
+/**
+ * Cardmarket deck list of cards to buy for a deck: { key, qty } entries, bought as their regular
+ * printing from the newest chapter. Same (V.n) rule as getCardmarketWants within that chapter.
+ * @param {{ key: string, qty: number }[]} wants
+ * @param {object} index catalog index (src/utils/catalog.js)
+ * @param {(index: object, key: string) => object|null} getPrinting
+ * @param {boolean} [withExpansion] restricts each want to that chapter
+ * @returns {string[]} lines, unknown cards skipped
+ */
+export const getDeckWantsLines = (wants, index, getPrinting, withExpansion = true) =>
+  wants
+    .map(({ key, qty }) => {
+      const card = getPrinting(index, key);
+      if (!card) return null;
+      const setCards = [...(index.bySet.get(card.set) ?? [])].sort(byCollectorNumber);
+      const group = setCards.filter((c) => getCardmarketName(c).toLowerCase() === getCardmarketName(card).toLowerCase());
+      const anyVariant = group.every((c) => baseNumber(c.number) === baseNumber(card.number));
+      const version = group.length > 1 && !anyVariant ? group.indexOf(card) + 1 : null;
+      const expansion = withExpansion && card.setName ? ` (${card.setName})` : '';
+      return `${qty} ${getCardmarketName(card)}${version ? ` (V.${version})` : ''}${expansion}`;
+    })
+    .filter(Boolean);

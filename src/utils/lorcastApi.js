@@ -30,6 +30,16 @@ export const fetchLorcastCard = async (setCode, cardNumber) => {
   }
 };
 
+/**
+ * Fetches every card of a set with all its game data (raw Lorcast objects).
+ * @returns {Promise<object[]>} rejects on network or HTTP errors
+ */
+export const fetchLorcastSetCards = async (setCode) => {
+  const res = await fetch(`${BASE_URL}/sets/${setCode}/cards`);
+  if (!res.ok) throw new Error(`Lorcast ${res.status}`);
+  return res.json();
+};
+
 const setCache = new Map();
 
 /**

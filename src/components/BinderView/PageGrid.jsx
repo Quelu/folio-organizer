@@ -42,7 +42,17 @@ export const PageHeader = ({ binder, page }) => {
 };
 
 /** The sleeve sheet itself: the pocket grid of one page. This is the part that turns. */
-export const PagePanel = ({ binder, page, highlight, celebrate, lastAddedCard, onOpenCard, onStepCard, compact }) => {
+export const PagePanel = ({
+  binder,
+  page,
+  highlight,
+  celebrate,
+  lastAddedCard,
+  pulledByPocket = {},
+  onOpenCard,
+  onStepCard,
+  compact,
+}) => {
   const { gridCols, cards, gameType, setSize } = binder;
   const { cardNumbers, complete } = getPageInfo(binder, page);
   const pocketStyle = getGame(gameType).pocket;
@@ -66,6 +76,7 @@ export const PagePanel = ({ binder, page, highlight, celebrate, lastAddedCard, o
               cardData={cards[String(num)]}
               isHighlighted={highlight?.cardNumber === num}
               isLastAdded={lastAddedCard === num}
+              pulled={pulledByPocket[String(num)]}
               pulse={highlight?.cardNumber === num ? highlight : null}
               pocketStyle={pocketStyle}
               outOfSet={Boolean(setSize && num > setSize)}

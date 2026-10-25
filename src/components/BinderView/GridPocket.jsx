@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence, useAnimate } from 'motion/react';
-import { Check, Plus, Minus, Sparkles } from 'lucide-react';
+import { Check, Plus, Minus, Sparkles, Layers } from 'lucide-react';
 import TiltCard from '../ui/TiltCard';
 
 // Images already shown once: no fade-in again when a page is remounted (e.g. after a page turn)
@@ -115,6 +115,7 @@ const GridPocket = ({
   pulse,
   isHighlighted,
   isLastAdded,
+  pulled,
   pocketStyle,
   outOfSet,
   onOpen,
@@ -130,6 +131,8 @@ const GridPocket = ({
   const hasCard = quantity > 0;
   const fullyExported = hasCard && exportedQuantity >= quantity;
   const partiallyExported = hasCard && exportedQuantity > 0 && exportedQuantity < quantity;
+  const pulledCount = hasCard ? (pulled ?? []).reduce((s, p) => s + p.qty, 0) : 0;
+  const allPulled = pulledCount >= quantity;
 
   // Physical feedback each time the card is added, removed or located
   useEffect(() => {
@@ -157,7 +160,7 @@ const GridPocket = ({
       }}
       aria-label={`Carte ${cardNumber}${
         hasCard ? `, ${quantity} exemplaire${quantity > 1 ? 's' : ''}${foil ? ` dont ${foil} foil` : ''}` : ', vide'
-      }`}
+      }${pulledCount ? `, ${pulledCount} sortie${pulledCount > 1 ? 's' : ''} pour un deck` : ''}`}
       className={`group relative cursor-pointer outline-none ${isHighlighted || isLastAdded ? 'z-10' : 'hover:z-10'}`}
     >
       <AnimatePresence>{isLastAdded && hasCard && <LastAddedRing key="ring" />}</AnimatePresence>
@@ -227,6 +230,8 @@ const GridPocket = ({
                   {cardNumber}
                 </span>
               )}
+              {/* Every copy is in a deck: the sleeve looks empty in the real binder */}
+              {allPulled && <div aria-hidden className="absolute inset-0 z-[5] bg-slate-950/45" />}
             </motion.div>
           )}
         </AnimatePresence>
@@ -298,6 +303,28 @@ const GridPocket = ({
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Centered by a static wrapper: motion's transform would override translate classes */}
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-1">
+          <AnimatePresence>
+            {pulledCount > 0 && (
+              <motion.div
+                key="pulled"
+                initial={{ scale: 0, y: 6 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0 }}
+                transition={{ type: 'spring', stiffness: 450, damping: 20 }}
+                className="pointer-events-auto flex items-center gap-1 max-w-full px-1.5 py-0.5 rounded-md bg-sky-500/90 text-white text-[9px] font-bold shadow-lg shadow-black/50 ring-1 ring-white/30"
+                title={pulled.map((p) => `${p.qty} dans « ${p.deckName} »`).join('\n')}
+              >
+                <Layers size={10} className="flex-shrink-0" />
+                <span className="truncate">
+                  {pulled.length > 1 ? `${pulledCount} en decks` : `${pulledCount < quantity ? `${pulledCount}× ` : ''}${pulled[0].deckName}`}
+                </span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
         {/* Quick +/- on hover (desktop) */}
         <div className="absolute inset-x-1 bottom-1 hidden [@media(hover:hover)]:flex justify-center gap-1 z-20 opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200">
