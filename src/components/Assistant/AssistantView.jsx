@@ -174,10 +174,13 @@ const AssistantView = ({ onOpenSidebar }) => {
   const [scope, setScope] = useState(() => binders.filter((b) => b.gameType === 'lorcana' && b.setCode).map((b) => b.id));
   const [includeReferences, setIncludeReferences] = useState(true);
   const seedDeck = view.deckId ? decks.find((d) => d.id === view.deckId) : null;
-  const [draft, setDraft] = useState(() =>
-    seedDeck
-      ? `Améliore mon deck « ${seedDeck.name} » (id ${seedDeck.id}) : rends-le plus régulier et compétitif avec mes cartes, explique tes changements puis propose la nouvelle liste.`
-      : ''
+  // A request prepared by another screen (view.draft), or the improvement of a deck (view.deckId)
+  const [draft, setDraft] = useState(
+    () =>
+      view.draft ??
+      (seedDeck
+        ? `Améliore mon deck « ${seedDeck.name} » (id ${seedDeck.id}) : rends-le plus régulier et compétitif avec mes cartes, explique tes changements puis propose la nouvelle liste.`
+        : '')
   );
   const abortRef = useRef(null);
   const scrollRef = useRef(null);
@@ -248,7 +251,7 @@ const AssistantView = ({ onOpenSidebar }) => {
       if (!question || busy || !index || !settings.apiKey) return;
       setError(null);
       setDraft('');
-      if (view.deckId) setView({ kind: 'assistant' });
+      if (view.deckId || view.draft) setView({ kind: 'assistant' });
 
       const base =
         conversation ??
@@ -318,7 +321,7 @@ const AssistantView = ({ onOpenSidebar }) => {
       await saveConversation(saved);
       setConversations((list) => [saved, ...list.filter((c) => c.id !== saved.id)]);
     },
-    [busy, index, settings, conversation, scope, includeReferences, pendingSystem, collection, decks, allocations, prices, prefs.tradeKeep, view.deckId, setView]
+    [busy, index, settings, conversation, scope, includeReferences, pendingSystem, collection, decks, allocations, prices, prefs.tradeKeep, view.deckId, view.draft, setView]
   );
 
   const visible = conversation?.messages.filter((m) => !isToolResults(m)) ?? [];

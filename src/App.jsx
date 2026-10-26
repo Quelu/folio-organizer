@@ -10,6 +10,7 @@ import CardPreviewProvider from './components/CardPreview/CardPreviewProvider';
 import DecksView from './components/Decks/DecksView';
 import CollectionView from './components/Collection/CollectionView';
 import TradesView from './components/Trades/TradesView';
+import RotationView from './components/Rotation/RotationView';
 import ShareCollectionModal from './components/Trades/ShareCollectionModal';
 import BinderView from './components/BinderView/BinderView';
 import BinderFormModal from './components/Modals/BinderFormModal';
@@ -260,6 +261,8 @@ const AppContent = () => {
                 <CollectionView onOpenSidebar={() => setSidebarOpen(true)} />
               ) : view.kind === 'trades' ? (
                 <TradesView onOpenSidebar={() => setSidebarOpen(true)} onShareCollection={() => openShare()} />
+              ) : view.kind === 'rotation' ? (
+                <RotationView onOpenSidebar={() => setSidebarOpen(true)} />
               ) : view.kind === 'assistant' ? (
                 <Suspense
                   fallback={
