@@ -40,6 +40,7 @@ const SidebarContent = ({
   onEdit,
   onDuplicate,
   onDelete,
+  onShare,
   onExportBackup,
   onImportBackup,
   onClose,
@@ -130,6 +131,7 @@ const SidebarContent = ({
                 onEdit={() => onEdit(binder)}
                 onDuplicate={() => onDuplicate(binder.id)}
                 onDelete={() => onDelete(binder.id)}
+                onShare={binder.gameType === 'lorcana' && binder.setCode ? () => onShare(binder) : null}
               />
             </motion.div>
           ))}

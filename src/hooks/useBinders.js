@@ -16,6 +16,8 @@ const DEFAULT_STATE = {
   pulls: [],
   // Copies of a card several decks share, assigned to one of them: { [cardKey]: { [deckId]: qty } }
   allocations: {},
+  // Collections other players shared to trade with them (see utils/tradeShare.js), plus importedAt
+  partners: [],
   // Main screen: { kind: 'binder' } shows the active binder, other kinds are the collection-wide views
   view: { kind: 'binder' },
   prefs: {
@@ -24,6 +26,10 @@ const DEFAULT_STATE = {
     cardmarketExcludedRarities: ['Epic', 'Enchanted', 'Iconic', 'Bonus'],
     // Copies of each card kept out of trades: 1 for a collection, 4 for a playset
     tradeKeep: 1,
+    // Cards looked for in trades: the alternate arts missing from the binders, the decks' missing copies
+    tradeWants: { specials: false, decks: true },
+    // Name shown to the players the collection is shared with
+    traderName: '',
     // Language of card names, texts and pictures: 'fr' or 'en'
     cardLanguage: 'fr',
   },
@@ -421,6 +427,36 @@ export const useBinders = () => {
     }));
   }, []);
 
+  /** Stores a collection another player shared, replacing the previous one of the same player. Returns its id. */
+  const savePartner = useCallback((share) => {
+    const same = (p) => p.owner.toLowerCase() === share.owner.toLowerCase();
+    const id = stateRef.current.partners.find(same)?.id ?? crypto.randomUUID();
+    const partner = { ...share, id, importedAt: Date.now() };
+    setState((prev) => ({
+      ...prev,
+      partners: prev.partners.some(same) ? prev.partners.map((p) => (same(p) ? partner : p)) : [...prev.partners, partner],
+    }));
+    return id;
+  }, []);
+
+  /** Forgets a player's collection and returns what restores it. */
+  const deletePartner = useCallback((partnerId) => {
+    const index = stateRef.current.partners.findIndex((p) => p.id === partnerId);
+    if (index === -1) return null;
+    const snapshot = { partner: stateRef.current.partners[index], index };
+    setState((prev) => ({ ...prev, partners: prev.partners.filter((p) => p.id !== partnerId) }));
+    return snapshot;
+  }, []);
+
+  const restorePartner = useCallback(({ partner, index }) => {
+    setState((prev) => {
+      if (prev.partners.some((p) => p.id === partner.id)) return prev;
+      const partners = [...prev.partners];
+      partners.splice(index, 0, partner);
+      return { ...prev, partners };
+    });
+  }, []);
+
   /** Replaces the whole state with an imported backup. Throws if the file is not a backup. */
   const importState = useCallback((data) => {
     if (!data || !Array.isArray(data.binders)) throw new Error('Fichier de sauvegarde invalide');
@@ -435,6 +471,7 @@ export const useBinders = () => {
     decks: state.decks,
     pulls: state.pulls,
     allocations: state.allocations,
+    partners: state.partners,
     view: state.view,
     state,
     createBinder,
@@ -463,5 +500,8 @@ export const useBinders = () => {
     pullCards,
     returnCards,
     setAllocation,
+    savePartner,
+    deletePartner,
+    restorePartner,
   };
 };
