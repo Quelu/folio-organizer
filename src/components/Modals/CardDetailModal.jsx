@@ -1,20 +1,27 @@
 import { useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, Minus, Plus, Trash2, Check, X, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Minus, Plus, Trash2, Check, X, Sparkles, Layers, ArrowLeftRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { fetchLorcastCard } from '../../utils/lorcastApi';
 import { getLocation } from '../../utils/calculations';
-import { getGame } from '../../data/games';
+import { getGame, LORCANA_RARITIES } from '../../data/games';
 import TiltCard from '../ui/TiltCard';
 import { getCounts } from '../../utils/cards';
+import { useCatalog } from '../../hooks/catalogContext';
+import { findPocketCard } from '../../utils/catalog';
+import TradeSuggestions from '../Trades/TradeSuggestions';
+import { useCardLang } from '../../hooks/useCardLang';
 
-/** Image for the detail view: owned cards already have one, others are previewed from Lorcast. */
-const useCardImage = (binder, cardNumber) => {
+/**
+ * Image for the detail view when the catalog has none: owned cards already have one, others are
+ * previewed from Lorcast. skip: the catalog picture is known, nothing to fetch.
+ */
+const useCardImage = (binder, cardNumber, skip) => {
   const stored = binder.cards[String(cardNumber)]?.imageUrl ?? null;
   const [fetched, setFetched] = useState({ key: null, url: null });
   const key = `${binder.setCode}-${cardNumber}`;
 
   useEffect(() => {
-    if (stored || binder.gameType !== 'lorcana' || !binder.setCode) return;
+    if (skip || stored || binder.gameType !== 'lorcana' || !binder.setCode) return;
     let cancelled = false;
     fetchLorcastCard(binder.setCode, cardNumber).then((url) => {
       if (!cancelled) setFetched({ key, url });
@@ -22,7 +29,7 @@ const useCardImage = (binder, cardNumber) => {
     return () => {
       cancelled = true;
     };
-  }, [stored, binder.gameType, binder.setCode, cardNumber, key]);
+  }, [skip, stored, binder.gameType, binder.setCode, cardNumber, key]);
 
   return stored ?? (fetched.key === key ? fetched.url : null);
 };
@@ -82,7 +89,7 @@ const Stat = ({ label, value }) => (
   </div>
 );
 
-const CardDetailModal = ({ binder, cardNumber, onClose, onNavigate, onSetCounts }) => {
+const CardDetailModal = ({ binder, cardNumber, pulled, onClose, onNavigate, onSetCounts }) => {
   const isOpen = cardNumber != null;
 
   useEffect(() => {
@@ -121,7 +128,7 @@ const CardDetailModal = ({ binder, cardNumber, onClose, onNavigate, onSetCounts 
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 32 }}
               transition={{ duration: 0.2, ease: 'easeOut' }}
-              className="surface pointer-events-auto w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl max-h-[94vh] overflow-y-auto"
+              className="surface pointer-events-auto w-full sm:max-w-3xl rounded-t-2xl sm:rounded-2xl max-h-[94vh] overflow-y-auto"
               role="dialog"
               aria-modal="true"
               aria-label={`Carte ${cardNumber}`}
@@ -129,6 +136,7 @@ const CardDetailModal = ({ binder, cardNumber, onClose, onNavigate, onSetCounts 
               <DetailBody
                 binder={binder}
                 cardNumber={cardNumber}
+                pulled={pulled}
                 onClose={onClose}
                 onNavigate={onNavigate}
                 onSetCounts={onSetCounts}
@@ -141,7 +149,7 @@ const CardDetailModal = ({ binder, cardNumber, onClose, onNavigate, onSetCounts 
   );
 };
 
-const DetailBody = ({ binder, cardNumber, onClose, onNavigate, onSetCounts }) => {
+const DetailBody = ({ binder, cardNumber, pulled, onClose, onNavigate, onSetCounts }) => {
   // Direction of the last card change, to slide the visual the right way
   const [nav, setNav] = useState({ card: cardNumber, dir: 0 });
   if (nav.card !== cardNumber) setNav({ card: cardNumber, dir: cardNumber > nav.card ? 1 : -1 });
@@ -150,14 +158,20 @@ const DetailBody = ({ binder, cardNumber, onClose, onNavigate, onSetCounts }) =>
   const exported = card?.exportedQuantity ?? 0;
   const { normal, foil } = getCounts(card);
   const loc = getLocation(cardNumber, binder);
-  const imageUrl = useCardImage(binder, cardNumber);
   const game = getGame(binder.gameType);
   const outOfSet = binder.setSize && cardNumber > binder.setSize;
+  const { index } = useCatalog();
+  const cardLang = useCardLang();
+  const catalogCard = index && binder.gameType === 'lorcana' ? findPocketCard(index, binder.setCode, cardNumber) : null;
+  const catalogImage = cardLang.image(catalogCard, 'normal');
+  const imageUrl = useCardImage(binder, cardNumber, Boolean(catalogImage));
+  const shownImage = catalogImage ?? imageUrl;
+  const largeImage = catalogImage ? cardLang.image(catalogCard, 'large') : null;
 
   return (
     <div className="flex flex-col sm:flex-row gap-6 p-5 sm:p-6">
       {/* Visual */}
-      <div className="relative sm:w-64 flex-shrink-0 mx-auto w-48" style={{ perspective: 1200 }}>
+      <div className="relative w-60 sm:w-72 lg:w-80 flex-shrink-0 mx-auto" style={{ perspective: 1200 }}>
         {/* The card flips in when the sheet opens, then slides left/right when browsing neighbours */}
         <motion.div
           initial={{ rotateY: -100, scale: 0.85 }}
@@ -176,23 +190,20 @@ const DetailBody = ({ binder, cardNumber, onClose, onNavigate, onSetCounts }) =>
             >
               <TiltCard
                 max={18}
+                foil={foil > 0}
+                foilMask={cardLang.foilMask(catalogCard)}
                 className={`pocket-shine aspect-[5/7] rounded-xl overflow-hidden ring-1 ring-white/10 shadow-2xl shadow-black/60 bg-gradient-to-br ${game.pocket} ${
                   quantity === 0 ? 'opacity-60 grayscale' : ''
                 }`}
               >
-                {foil > 0 && (
-                  <div
-                    aria-hidden
-                    className="foil-sheen pointer-events-none absolute inset-0 z-[4] mix-blend-color-dodge"
-                  />
-                )}
-                {imageUrl ? (
+                {shownImage ? (
                   <motion.img
-                    key={imageUrl}
+                    key={shownImage}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    src={imageUrl}
-                    alt={`Carte ${cardNumber}`}
+                    src={shownImage}
+                    srcSet={largeImage ? `${shownImage} 1x, ${largeImage} 2x` : undefined}
+                    alt={catalogCard ? cardLang.fullName(catalogCard) : `Carte ${cardNumber}`}
                     className="absolute inset-0 w-full h-full object-cover"
                   />
                 ) : (
@@ -217,6 +228,15 @@ const DetailBody = ({ binder, cardNumber, onClose, onNavigate, onSetCounts }) =>
           <div>
             <div className="text-xs uppercase tracking-wider text-slate-500">{binder.name}</div>
             <h2 className="text-3xl font-black text-white tabular-nums">#{cardNumber}</h2>
+            {catalogCard && (
+              <p className="text-sm text-slate-300 leading-snug">
+                {cardLang.fullName(catalogCard)}
+                <span className="text-slate-500">
+                  {' '}
+                  · {LORCANA_RARITIES.find((r) => r.key === catalogCard.rarity)?.label ?? catalogCard.rarity}
+                </span>
+              </p>
+            )}
           </div>
           <div className="flex items-center -mr-2">
             <button
@@ -297,17 +317,33 @@ const DetailBody = ({ binder, cardNumber, onClose, onNavigate, onSetCounts }) =>
           )}
         </div>
 
-        <div className="mt-auto pt-5 hidden sm:flex gap-3 text-[11px] text-slate-500">
-          <span>
+        {pulled?.length > 0 && (
+          <p className="mt-3 flex items-center gap-1.5 text-xs text-sky-300">
+            <Layers size={13} />
+            Sortie pour {pulled.map((p) => `« ${p.deckName} » (${p.qty})`).join(', ')}
+          </p>
+        )}
+
+        {catalogCard && quantity === 0 && (
+          <div className="mt-5">
+            <span className="label flex items-center gap-1.5">
+              <ArrowLeftRight size={12} /> L'obtenir par échange
+            </span>
+            <TradeSuggestions card={catalogCard} />
+          </div>
+        )}
+
+        <div className="mt-auto pt-5 hidden sm:flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] text-slate-500">
+          <span className="whitespace-nowrap">
             <kbd className="kbd">←</kbd> <kbd className="kbd">→</kbd> Carte voisine
           </span>
-          <span>
+          <span className="whitespace-nowrap">
             <kbd className="kbd">+</kbd> <kbd className="kbd">−</kbd> Normal
           </span>
-          <span>
+          <span className="whitespace-nowrap">
             <kbd className="kbd">f</kbd> <kbd className="kbd">⇧F</kbd> Foil
           </span>
-          <span>
+          <span className="whitespace-nowrap">
             <kbd className="kbd">Esc</kbd> Fermer
           </span>
         </div>

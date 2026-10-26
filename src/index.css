@@ -208,7 +208,60 @@
   }
 }
 
+@layer components {
+  /* Real foil: rainbow lit through the card's foil mask (see FoilLayers) */
+  .holo-real {
+    background-image: linear-gradient(
+      115deg,
+      #ff3d9a 0%,
+      #ffd23d 16%,
+      #3dff9e 32%,
+      #3dc8ff 48%,
+      #9b3dff 64%,
+      #ff3d9a 80%,
+      #ffd23d 100%
+    );
+    background-size: 300% 300%;
+  }
+  .holo-drift {
+    animation: holo-drift 9s ease-in-out infinite;
+  }
+  /* The usual full-card sweep, once when the card appears then every 9 s */
+  .foil-sheen.foil-glint {
+    animation: foil-glint 9s ease-in-out infinite;
+  }
+  @keyframes holo-drift {
+    0%,
+    100% {
+      background-position: 0% 30%;
+    }
+    50% {
+      background-position: 100% 70%;
+    }
+  }
+  @keyframes foil-glint {
+    0% {
+      background-position: 0% 0%;
+      opacity: 0;
+    }
+    3% {
+      opacity: 1;
+    }
+    17% {
+      background-position: 100% 100%;
+      opacity: 1;
+    }
+    23%,
+    100% {
+      background-position: 100% 100%;
+      opacity: 0;
+    }
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .holo-drift,
+  .foil-sheen.foil-glint,
   .foil-surface,
   .foil-text,
   .foil-sheen,

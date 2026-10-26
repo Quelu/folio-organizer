@@ -1,10 +1,39 @@
 import { useRef, useState } from 'react';
-import { Plus, Search, Download, Upload, Library, X } from 'lucide-react';
+import { Plus, Search, Download, Upload, Library, X, Layers, LayoutGrid, ArrowLeftRight, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence, LayoutGroup } from 'motion/react';
 import BinderItem from './BinderItem';
+import CatalogStatus from './CatalogStatus';
+
+const NAV_ITEMS = [
+  { kind: 'decks', label: 'Decks', icon: Layers },
+  { kind: 'stats', label: 'Collection', icon: LayoutGrid },
+  { kind: 'trades', label: 'Échanges', icon: ArrowLeftRight },
+  { kind: 'assistant', label: 'Assistant IA', icon: Sparkles },
+];
+
+/** Collection-wide screens, above the binder list. */
+const NavItem = ({ item, isActive, badge, onClick }) => (
+  <button
+    onClick={onClick}
+    className={`relative w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
+      isActive ? 'bg-white/[0.07] text-white ring-1 ring-inset ring-white/10' : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
+    }`}
+    aria-current={isActive ? 'page' : undefined}
+  >
+    <item.icon size={16} className={isActive ? 'text-indigo-300' : ''} />
+    <span className="flex-1 text-left">{item.label}</span>
+    {badge > 0 && <span className="text-[11px] tabular-nums text-slate-500">{badge}</span>}
+  </button>
+);
 
 const SidebarContent = ({
   binders,
+  view,
+  deckCount,
+  onNavigate,
+  onSearch,
+  cardLanguage,
+  onCardLanguage,
   activeBinderId,
   onSelect,
   onCreateNew,
@@ -40,7 +69,27 @@ const SidebarContent = ({
         )}
       </div>
 
-      <div className="px-3">
+      <div className="px-3 space-y-1">
+        <button
+          onClick={onSearch}
+          className="w-full flex items-center gap-2.5 px-3 py-2 mb-2 rounded-lg text-sm text-slate-500 bg-slate-950/60 ring-1 ring-inset ring-white/10 hover:text-slate-300 hover:ring-white/20 transition-colors"
+        >
+          <Search size={15} />
+          <span className="flex-1 text-left">Chercher une carte…</span>
+          <kbd className="kbd">⌘K</kbd>
+        </button>
+        {NAV_ITEMS.map((item) => (
+          <NavItem
+            key={item.kind}
+            item={item}
+            isActive={view.kind === item.kind}
+            badge={item.kind === 'decks' ? deckCount : 0}
+            onClick={() => onNavigate({ kind: item.kind })}
+          />
+        ))}
+      </div>
+
+      <div className="px-3 mt-4">
         <button onClick={onCreateNew} className="btn-primary w-full">
           <Plus size={17} />
           Nouvelle farde
@@ -95,12 +144,37 @@ const SidebarContent = ({
         )}
       </nav>
 
-      <div className="p-3 border-t border-white/5 flex gap-1">
+      <div className="border-t border-white/5">
+        <CatalogStatus />
+      </div>
+      <div className="px-4 pt-2.5 flex items-center justify-between gap-3">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">Langue des cartes</span>
+        <div className="flex items-center rounded-lg ring-1 ring-inset ring-white/10 p-0.5" role="group" aria-label="Langue des cartes">
+          {[
+            { key: 'fr', label: 'FR', title: 'Noms, textes et images en français' },
+            { key: 'en', label: 'EN', title: 'Noms, textes et images en anglais' },
+          ].map((l) => (
+            <button
+              key={l.key}
+              onClick={() => onCardLanguage(l.key)}
+              aria-pressed={cardLanguage === l.key}
+              title={l.title}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors ${
+                cardLanguage === l.key ? 'bg-white/10 text-white' : 'text-slate-500 hover:text-white'
+              }`}
+            >
+              {l.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="p-3 flex gap-1">
         <button
           onClick={onExportBackup}
           disabled={binders.length === 0}
           className="btn-icon flex-1 gap-2 text-xs"
-          title="Télécharger une sauvegarde de toutes tes fardes"
+          title="Télécharger une sauvegarde de toutes tes fardes et de tes decks"
         >
           <Download size={14} /> Sauvegarder
         </button>
@@ -159,6 +233,14 @@ const Sidebar = ({ isOpen, onClose, ...props }) => (
                 onClose={onClose}
                 onSelect={(id) => {
                   props.onSelect(id);
+                  onClose();
+                }}
+                onNavigate={(v) => {
+                  props.onNavigate(v);
+                  onClose();
+                }}
+                onSearch={() => {
+                  props.onSearch();
                   onClose();
                 }}
               />

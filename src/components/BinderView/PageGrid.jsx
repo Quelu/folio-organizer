@@ -2,6 +2,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Sparkles } from 'lucide-react';
 import { getCardsOnPage, getSheet } from '../../utils/calculations';
 import { getGame } from '../../data/games';
+import { findPocketCard } from '../../utils/catalog';
+import { useCatalog } from '../../hooks/catalogContext';
+import { useCardLang } from '../../hooks/useCardLang';
 import Confetti from '../ui/Confetti';
 import GridPocket from './GridPocket';
 
@@ -42,10 +45,24 @@ export const PageHeader = ({ binder, page }) => {
 };
 
 /** The sleeve sheet itself: the pocket grid of one page. This is the part that turns. */
-export const PagePanel = ({ binder, page, highlight, celebrate, lastAddedCard, onOpenCard, onStepCard, compact }) => {
+export const PagePanel = ({
+  binder,
+  page,
+  highlight,
+  celebrate,
+  lastAddedCard,
+  pulledByPocket = {},
+  onOpenCard,
+  onStepCard,
+  compact,
+}) => {
   const { gridCols, cards, gameType, setSize } = binder;
   const { cardNumbers, complete } = getPageInfo(binder, page);
   const pocketStyle = getGame(gameType).pocket;
+  const { index } = useCatalog();
+  const cardLang = useCardLang();
+  // Picture in the card language with its foil mask, once the catalog knows the card
+  const pocketCard = (num) => (index && gameType === 'lorcana' ? findPocketCard(index, binder.setCode, num) : null);
   const isCelebrating = celebrate?.page === page;
 
   return (
@@ -64,8 +81,11 @@ export const PagePanel = ({ binder, page, highlight, celebrate, lastAddedCard, o
               key={num}
               cardNumber={num}
               cardData={cards[String(num)]}
+              catalogImage={cardLang.image(pocketCard(num), 'small')}
+              foilMask={cardLang.foilMask(pocketCard(num))}
               isHighlighted={highlight?.cardNumber === num}
               isLastAdded={lastAddedCard === num}
+              pulled={pulledByPocket[String(num)]}
               pulse={highlight?.cardNumber === num ? highlight : null}
               pocketStyle={pocketStyle}
               outOfSet={Boolean(setSize && num > setSize)}

@@ -15,14 +15,14 @@ const readCache = () => {
 
 /**
  * Numbered Lorcana chapters, kept up to date from the Lorcast API (cached for a day).
- * Falls back to the built-in list when offline.
+ * Falls back to the built-in list when offline. A new refreshKey fetches the list again at once.
  */
-export const useLorcanaSets = () => {
+export const useLorcanaSets = (refreshKey = 0) => {
   const [sets, setSets] = useState(() => readCache()?.sets ?? LORCANA_SETS);
 
   useEffect(() => {
     const cached = readCache();
-    if (cached && Date.now() - cached.at < MAX_AGE) {
+    if (!refreshKey && cached && Date.now() - cached.at < MAX_AGE) {
       setKnownLorcanaSets(cached.sets);
       return;
     }
@@ -51,7 +51,7 @@ export const useLorcanaSets = () => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshKey]);
 
   return sets;
 };

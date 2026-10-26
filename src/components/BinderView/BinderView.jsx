@@ -11,6 +11,7 @@ import {
 } from '../../utils/calculations';
 import { getDreambornExportRows, generateDreambornCsv, downloadCsv } from '../../utils/csvExport';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
+import { getBinderPulls } from '../../utils/collection';
 import { useToast } from '../ui/toastContext';
 import CardDetailModal from '../Modals/CardDetailModal';
 import CardmarketExportModal from '../Modals/CardmarketExportModal';
@@ -21,6 +22,9 @@ import PageNavigator from './PageNavigator';
 
 const BinderView = ({
   binder,
+  focusRequest,
+  pulls,
+  decks,
   addHistory,
   prefs,
   onSetPref,
@@ -183,6 +187,17 @@ const BinderView = ({
     [binder.id, onAddCards, focusCard, celebrateCompletions]
   );
 
+  // Opened from the card search or a deck's pull list: go straight to the card
+  const focusToken = focusRequest?.token;
+  const focusCardNumber = focusRequest?.cardNumber;
+  useEffect(() => {
+    if (!focusToken) return;
+    const frame = requestAnimationFrame(() => focusCard(focusCardNumber));
+    return () => cancelAnimationFrame(frame);
+    // Only for a new request, not when focusCard changes with the page
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusToken]);
+
   const handleLocate = useCallback(
     (cardNumber) => {
       focusCard(cardNumber);
@@ -253,6 +268,14 @@ const BinderView = ({
       message: `${pendingCount} exemplaire${pendingCount > 1 ? 's' : ''} exporté${pendingCount > 1 ? 's' : ''} vers Dreamborn`,
     });
   }, [binder, onBulkMarkExported, notify, pendingCount]);
+
+  // Pockets whose copies are out of the binder for a deck: { [cardNumber]: [{ deckName, qty }] }
+  const pulledByPocket = Object.fromEntries(
+    Object.entries(getBinderPulls(pulls, binder.id)).map(([num, list]) => [
+      num,
+      list.map((p) => ({ deckName: decks.find((d) => d.id === p.deckId)?.name ?? 'Deck', qty: p.qty })),
+    ])
+  );
 
   const recent = addHistory
     .filter((h) => h.binderId === binder.id)
@@ -356,6 +379,7 @@ const BinderView = ({
             highlight={highlight}
             celebrate={celebrate}
             lastAddedCard={lastAddedCard}
+            pulledByPocket={pulledByPocket}
             onOpenCard={setDetailCard}
             onStepCard={handleStepCard}
           />
@@ -382,6 +406,7 @@ const BinderView = ({
       <CardDetailModal
         binder={binder}
         cardNumber={detailCard}
+        pulled={detailCard != null ? (pulledByPocket[String(detailCard)] ?? []) : []}
         onClose={closeDetail}
         onNavigate={handleDetailNavigate}
         onSetCounts={handleSetCounts}
