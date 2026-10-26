@@ -1,12 +1,12 @@
 import { useRef, useState } from 'react';
-import { Plus, Search, Download, Upload, Library, X, Layers, BarChart3, ArrowLeftRight, Sparkles } from 'lucide-react';
+import { Plus, Search, Download, Upload, Library, X, Layers, LayoutGrid, ArrowLeftRight, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence, LayoutGroup } from 'motion/react';
 import BinderItem from './BinderItem';
 import CatalogStatus from './CatalogStatus';
 
 const NAV_ITEMS = [
   { kind: 'decks', label: 'Decks', icon: Layers },
-  { kind: 'stats', label: 'Collection', icon: BarChart3 },
+  { kind: 'stats', label: 'Collection', icon: LayoutGrid },
   { kind: 'trades', label: 'Échanges', icon: ArrowLeftRight },
   { kind: 'assistant', label: 'Assistant IA', icon: Sparkles },
 ];

@@ -8,7 +8,7 @@ import Sidebar from './components/Sidebar/Sidebar';
 import CardSearchModal from './components/Search/CardSearchModal';
 import CardPreviewProvider from './components/CardPreview/CardPreviewProvider';
 import DecksView from './components/Decks/DecksView';
-import CollectionStatsView from './components/Stats/CollectionStatsView';
+import CollectionView from './components/Collection/CollectionView';
 import TradesView from './components/Trades/TradesView';
 import BinderView from './components/BinderView/BinderView';
 import BinderFormModal from './components/Modals/BinderFormModal';
@@ -239,7 +239,7 @@ const AppContent = () => {
               {view.kind === 'decks' ? (
                 <DecksView onOpenSidebar={() => setSidebarOpen(true)} onLocate={locateCard} />
               ) : view.kind === 'stats' ? (
-                <CollectionStatsView onOpenSidebar={() => setSidebarOpen(true)} />
+                <CollectionView onOpenSidebar={() => setSidebarOpen(true)} />
               ) : view.kind === 'trades' ? (
                 <TradesView onOpenSidebar={() => setSidebarOpen(true)} />
               ) : view.kind === 'assistant' ? (
