@@ -8,6 +8,7 @@ import {
   FORMATS,
 } from './catalog.js';
 import { getOwned } from './collection.js';
+import { getDeckProfile, keywordLabel } from './deckProfile.js';
 
 /**
  * A deck is { id, name, kind: 'mine'|'reference', format: 'core'|'infinity', cards, notes, source,
@@ -93,12 +94,14 @@ export const analyzeDeck = (deck, index, collection = null, lang = 'en', availab
 
   const inks = [...new Set(entries.flatMap((e) => e.card?.inks ?? []))];
   const curve = Array.from({ length: 8 }, () => 0); // 0…6, 7+
+  const uninkableCurve = Array.from({ length: 8 }, () => 0);
   const types = {};
   let inkable = 0;
   let costSum = 0;
   for (const { card, qty } of entries) {
     if (!card) continue;
     curve[Math.min(card.cost, 7)] += qty;
+    if (!card.inkwell) uninkableCurve[Math.min(card.cost, 7)] += qty;
     const type = getMainType(card);
     types[type] = (types[type] ?? 0) + qty;
     if (card.inkwell) inkable += qty;
@@ -123,6 +126,7 @@ export const analyzeDeck = (deck, index, collection = null, lang = 'en', availab
   const rotationSets = rotation?.sets ?? [];
   const rotationDate = rotation?.date ?? null;
   const rotating = rotation ? entries.filter((e) => rotation.leaves(e.key)) : [];
+  let profile = null;
   if (index) {
     for (const { key: format } of FORMATS) {
       legality[format] = entries
@@ -151,6 +155,23 @@ export const analyzeDeck = (deck, index, collection = null, lang = 'en', availab
     if (unknown.length) {
       warnings.push({ code: 'unknown', message: `${unknown.length} carte(s) introuvable(s) dans le catalogue.` });
     }
+    profile = getDeckProfile(entries, index, lang);
+    const orphans = profile.shifts.filter((s) => s.baseCopies === 0);
+    if (orphans.length) {
+      warnings.push({
+        code: 'shift',
+        message: `${keywordLabel('Shift', lang)} sans personnage du deck sur lequel se poser : ${orphans.map((s) => nameOf(s.entry)).join(', ')}.`,
+        keys: orphans.map((s) => s.entry.key),
+      });
+    }
+    const unsung = profile.characters.copies ? profile.songs.filter((s) => s.singerCopies === 0 && !s.together) : [];
+    if (unsung.length) {
+      warnings.push({
+        code: 'song',
+        message: `Aucun personnage du deck ne peut chanter ${unsung.map((s) => `${nameOf(s.entry)} (coût ${s.cost})`).join(', ')}.`,
+        keys: unsung.map((s) => s.entry.key),
+      });
+    }
     if (total >= 20 && inkable / total < 0.6) {
       warnings.push({
         code: 'inkable',
@@ -167,6 +188,7 @@ export const analyzeDeck = (deck, index, collection = null, lang = 'en', availab
     total,
     inks,
     curve,
+    uninkableCurve,
     types,
     inkable,
     averageCost: total ? costSum / total : 0,
@@ -177,6 +199,7 @@ export const analyzeDeck = (deck, index, collection = null, lang = 'en', availab
     rotationSets,
     rotationDate,
     coreSets,
+    profile,
     owned,
     ownedRatio: total ? owned / total : 0,
     missing,

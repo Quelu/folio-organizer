@@ -23,6 +23,7 @@ import MissingCards from './MissingCards';
 import PullList from './PullList';
 import DeckVersions from './DeckVersions';
 import HandSimulator from './HandSimulator';
+import DeckProfile from './DeckProfile';
 import { useStore } from '../../hooks/storeContext';
 import { useCatalog } from '../../hooks/catalogContext';
 import { useCollection } from '../../hooks/useCollection';
@@ -35,6 +36,7 @@ import SharedCardsPanel from './SharedCardsPanel';
 
 const TABS = [
   { key: 'list', label: 'Liste' },
+  { key: 'profile', label: 'Analyse' },
   { key: 'missing', label: 'Manquantes' },
   { key: 'pull', label: 'Collecte' },
   { key: 'hand', label: 'Main de départ' },
@@ -320,6 +322,7 @@ const DeckEditor = ({ deck, onBack, onOpenSidebar, onLocate, onDelete }) => {
               </aside>
             </div>
           )}
+          {tab === 'profile' && <DeckProfile analysis={analysis} />}
           {tab === 'missing' && (
             <div className="max-w-2xl">
               <MissingCards entries={analysis.missing} />

@@ -32,6 +32,7 @@ import {
 import { buildLocalizedCards } from '../src/utils/lorcanaJson.js';
 import { buildCollection, getPullList, getCopyAllocation, getDeckUsage, getPulledCount } from '../src/utils/collection.js';
 import { analyzeDeck, parseDeckList, formatDeckList } from '../src/utils/deckRules.js';
+import { formatDeckProfile } from '../src/utils/deckProfile.js';
 import { getBinderStats, getLocation } from '../src/utils/calculations.js';
 import { getGame, getLorcanaSetName, setKnownLorcanaSets, withFrenchNames, LORCANA_RARITIES } from '../src/data/games.js';
 
@@ -277,6 +278,7 @@ const formatAnalysisHeader = (analysis) => {
     `${analysis.total} cartes · encres : ${analysis.inks.map(inkLabel).join(' / ') || '—'} · encrables : ${analysis.inkable} (${analysis.total ? pct(analysis.inkable / analysis.total) : '—'}) · coût moyen ${analysis.averageCost.toFixed(2)}`,
     `Courbe (coût:copies) : ${formatCurve(analysis.curve)}`,
     `Types : ${types || '—'}`,
+    ...formatDeckProfile(analysis.profile, (e) => (e.card ? cite(e.card) : e.name), 'fr'),
     analysis.errors.length ? `Erreurs :\n${analysis.errors.map((e) => `  ✗ ${e.message}`).join('\n')}` : 'Aucune erreur de construction.',
     ...(analysis.warnings.length ? [`Avertissements :\n${analysis.warnings.map((w) => `  ! ${w.message}`).join('\n')}`] : []),
   ].join('\n');

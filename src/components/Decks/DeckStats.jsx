@@ -3,23 +3,43 @@ import { AlertTriangle, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { getInk, CARD_TYPES } from '../../utils/catalog';
 import { MIN_DECK_SIZE } from '../../utils/deckRules';
 
-/** Cost curve: one bar per cost, 7+ grouped. */
-const CostCurve = ({ curve }) => {
+/** Cost curve: one bar per cost, 7+ grouped, the uninkable copies on top. */
+const CostCurve = ({ curve, uninkable }) => {
   const max = Math.max(1, ...curve);
   return (
     <div>
-      <span className="label">Courbe de coût</span>
+      <div className="flex items-center justify-between gap-2">
+        <span className="label">Courbe de coût</span>
+        {uninkable.some(Boolean) && (
+          <span className="flex items-center gap-2.5 text-[10px] text-slate-500 mb-1.5">
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-sm bg-violet-400/80" />
+              encrables
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-sm bg-slate-500/70" />
+              non encrables
+            </span>
+          </span>
+        )}
+      </div>
       <div className="flex items-end gap-1.5 h-24">
         {curve.map((count, cost) => (
           <div key={cost} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
             <span className="text-[10px] tabular-nums text-slate-400">{count || ''}</span>
             <motion.div
-              className="w-full rounded-t-md bg-gradient-to-t from-indigo-500/60 to-violet-400/80"
+              className="w-full rounded-t-md overflow-hidden flex flex-col gap-0.5"
               initial={false}
               animate={{ height: `${(count / max) * 100}%` }}
               transition={{ type: 'spring', stiffness: 160, damping: 22 }}
               style={{ minHeight: count ? 3 : 0 }}
-            />
+              title={uninkable[cost] ? `${uninkable[cost]} non encrable${uninkable[cost] > 1 ? 's' : ''} sur ${count}` : undefined}
+            >
+              {uninkable[cost] > 0 && <div className="bg-slate-500/70" style={{ flexGrow: uninkable[cost] }} />}
+              {count > uninkable[cost] && (
+                <div className="bg-gradient-to-t from-indigo-500/60 to-violet-400/80" style={{ flexGrow: count - uninkable[cost] }} />
+              )}
+            </motion.div>
             <span className="text-[11px] font-semibold text-slate-500 tabular-nums">{cost === 7 ? '7+' : cost}</span>
           </div>
         ))}
@@ -30,7 +50,7 @@ const CostCurve = ({ curve }) => {
 
 /** Size, inks, types, inkable share, warnings and rule errors of a deck. */
 const DeckStats = ({ analysis }) => {
-  const { total, inks, curve, types, inkable, averageCost, errors, warnings } = analysis;
+  const { total, inks, curve, uninkableCurve, types, inkable, averageCost, errors, warnings } = analysis;
   const inkableShare = total ? inkable / total : 0;
 
   return (
@@ -54,7 +74,7 @@ const DeckStats = ({ analysis }) => {
         </div>
       </div>
 
-      <CostCurve curve={curve} />
+      <CostCurve curve={curve} uninkable={uninkableCurve} />
 
       <div className="flex flex-wrap gap-x-5 gap-y-2">
         <div>
