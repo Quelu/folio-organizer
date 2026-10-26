@@ -11,6 +11,7 @@ import {
   Sparkles,
   BookMarked,
   Layers,
+  ImageDown,
   Menu as MenuIcon,
 } from 'lucide-react';
 import Menu from '../ui/Menu';
@@ -24,6 +25,7 @@ import PullList from './PullList';
 import DeckVersions from './DeckVersions';
 import HandSimulator from './HandSimulator';
 import DeckProfile from './DeckProfile';
+import DeckImageModal from './DeckImageModal';
 import { useStore } from '../../hooks/storeContext';
 import { useCatalog } from '../../hooks/catalogContext';
 import { useCollection } from '../../hooks/useCollection';
@@ -110,6 +112,7 @@ const DeckEditor = ({ deck, onBack, onOpenSidebar, onLocate, onDelete }) => {
   const { index } = useCatalog();
   const collection = useCollection();
   const [tab, setTab] = useState('list');
+  const [imageOpen, setImageOpen] = useState(false);
   const cardLang = useCardLang();
   const allocation = useCopyAllocation();
   const analysis = useMemo(
@@ -186,6 +189,11 @@ const DeckEditor = ({ deck, onBack, onOpenSidebar, onLocate, onDelete }) => {
                   label: deck.kind === 'reference' ? 'Passer dans mes decks' : 'Passer en référence',
                   icon: deck.kind === 'reference' ? Layers : BookMarked,
                   onClick: () => updateDeck(deck.id, { kind: deck.kind === 'reference' ? 'mine' : 'reference' }),
+                },
+                {
+                  label: 'Exporter en image',
+                  icon: ImageDown,
+                  onClick: () => setImageOpen(true),
                 },
                 {
                   label: 'Dupliquer',
@@ -341,6 +349,7 @@ const DeckEditor = ({ deck, onBack, onOpenSidebar, onLocate, onDelete }) => {
           )}
         </div>
       </div>
+      <DeckImageModal isOpen={imageOpen} onClose={() => setImageOpen(false)} deck={deck} analysis={analysis} />
     </div>
   );
 };
