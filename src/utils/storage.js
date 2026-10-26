@@ -16,3 +16,6 @@ export const saveState = (state) => {
     // Ignore write errors (storage full, private mode, etc.)
   }
 };
+
+/** A backup file's contents: the whole state, as the "Sauvegarder" button downloads it. */
+export const serializeBackup = (state) => JSON.stringify({ ...state, exportedAt: new Date().toISOString() }, null, 2);

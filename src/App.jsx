@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
 import { motion, MotionConfig } from 'motion/react';
 import { Library, Menu as MenuIcon, Hash, MousePointerClick, Download, Loader2 } from 'lucide-react';
 import { useBinders } from './hooks/useBinders';
+import { useAutoBackup } from './hooks/useAutoBackup';
 import { StoreContext } from './hooks/storeContext';
 import CatalogProvider from './hooks/CatalogProvider';
 import Sidebar from './components/Sidebar/Sidebar';
@@ -18,6 +19,7 @@ import ConfirmDialog from './components/ui/ConfirmDialog';
 import ToastProvider from './components/ui/ToastProvider';
 import { useToast } from './components/ui/toastContext';
 import { parseCollectionShare } from './utils/tradeShare';
+import { serializeBackup } from './utils/storage';
 
 // The assistant brings the Anthropic SDK and the Markdown renderer: loaded when first opened
 const AssistantView = lazy(() => import('./components/Assistant/AssistantView'));
@@ -131,6 +133,7 @@ const AppContent = () => {
     view,
     setView,
   } = store;
+  const autoBackup = useAutoBackup(state);
 
   // Cmd/Ctrl+K opens the card search from anywhere
   useEffect(() => {
@@ -194,9 +197,7 @@ const AppContent = () => {
   };
 
   const exportBackup = () => {
-    const blob = new Blob([JSON.stringify({ ...state, exportedAt: new Date().toISOString() }, null, 2)], {
-      type: 'application/json',
-    });
+    const blob = new Blob([serializeBackup(state)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -245,6 +246,10 @@ const AppContent = () => {
     onShare: (binder) => openShare([binder.id]),
     onExportBackup: exportBackup,
     onImportBackup: readBackup,
+    autoBackup,
+    onChooseBackupFolder: async () => {
+      if (await autoBackup.choose()) notify({ tone: 'success', message: 'Sauvegarde automatique activée' });
+    },
   };
 
   return (
