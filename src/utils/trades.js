@@ -1,8 +1,33 @@
 import { getDeckUsage } from './collection.js';
 import { MAX_COPIES } from './deckRules.js';
+import { SPECIAL_RARITIES, baseNumber, findPocketCard } from './catalog.js';
 
 /** Cards worth less than this are bulk: nobody trades them one by one. */
 export const BULK_PRICE = 0.1;
+
+/**
+ * Printings of a Lorcana binder's empty pockets: the regular cards up to the set size, and the
+ * Epic / Enchanted / Iconic ones numbered after them with withSpecials.
+ */
+export const getBinderMissing = (binder, index, withSpecials = false) => {
+  const setCards = index.bySet.get(binder.setCode);
+  if (!setCards) return [];
+  const lastRegular = Math.max(
+    0,
+    ...setCards.filter((c) => !SPECIAL_RARITIES.includes(c.rarity)).map((c) => baseNumber(c.number))
+  );
+  const lastNumber = withSpecials
+    ? Math.max(binder.setSize ?? 0, ...setCards.map((c) => baseNumber(c.number)))
+    : (binder.setSize ?? lastRegular);
+  const cards = [];
+  for (let n = 1; n <= lastNumber; n++) {
+    if (binder.cards[String(n)]) continue;
+    const card = findPocketCard(index, binder.setCode, n);
+    if (!card || (!withSpecials && SPECIAL_RARITIES.includes(card.rarity))) continue;
+    cards.push(card);
+  }
+  return cards;
+};
 
 /** Takes up to n copies out of a pocket's counts, foils first. Returns how many were taken. */
 const reserve = (pocket, n) => {

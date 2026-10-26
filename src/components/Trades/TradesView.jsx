@@ -1,15 +1,16 @@
 import { useMemo, useState } from 'react';
-import { Menu as MenuIcon, Loader2, Minus, Plus, Scale, Search } from 'lucide-react';
+import { motion } from 'motion/react';
+import { Menu as MenuIcon, Loader2, Scale, Search, Users } from 'lucide-react';
 import { useStore } from '../../hooks/storeContext';
 import { useCatalog } from '../../hooks/catalogContext';
 import { useCollection } from '../../hooks/useCollection';
 import { usePrices } from '../../hooks/usePrices';
-import { baseNumber, findPocketCard, matchesQuery, SPECIAL_RARITIES } from '../../utils/catalog';
+import { matchesQuery } from '../../utils/catalog';
 import { analyzeDeck } from '../../utils/deckRules';
-import { getTradeableSurplus, buildTradeText, BULK_PRICE } from '../../utils/trades';
-import { getLorcanaSetName } from '../../data/games';
-import CardThumb from '../ui/CardThumb';
+import { getTradeableSurplus, getBinderMissing, buildTradeText, BULK_PRICE } from '../../utils/trades';
 import CopyButton from '../ui/CopyButton';
+import TradeRow from './TradeRow';
+import PartnerTrade from './PartnerTrade';
 import { useCardLang } from '../../hooks/useCardLang';
 import { useCopyAllocation } from '../../hooks/useCopyAllocation';
 
@@ -50,57 +51,6 @@ const balance = (haves, target) => {
   return Object.fromEntries(Object.entries(selection).filter(([, n]) => n > 0));
 };
 
-/** One card of a list, with a checkbox and a copy stepper when there are several. */
-const Row = ({ item, selected, onChange, format }) => {
-  const cardLang = useCardLang();
-  const { card, foil, qty, price } = item;
-  return (
-    <li
-      className={`flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors ${
-        selected ? 'bg-indigo-500/10 ring-1 ring-inset ring-indigo-400/30' : 'hover:bg-white/[0.03]'
-      }`}
-    >
-      <input
-        type="checkbox"
-        checked={selected > 0}
-        onChange={(e) => onChange(e.target.checked ? 1 : 0)}
-        className="w-4 h-4 accent-indigo-500 flex-shrink-0"
-        aria-label={`Sélectionner ${cardLang.fullName(card)}`}
-      />
-      <CardThumb card={card} foil={foil} className="w-8 flex-shrink-0" />
-      <div className="flex-1 min-w-0 leading-tight">
-        <div className="text-sm text-slate-200 truncate">
-          {cardLang.fullName(card)}
-          {foil && <span className="foil-text font-semibold text-xs"> foil</span>}
-        </div>
-        <div className="text-[11px] text-slate-500 truncate">
-          {getLorcanaSetName(card.set) ?? `Set ${card.set}`} · n° {card.number}
-          {qty > 1 && <> · {qty} dispo</>}
-        </div>
-      </div>
-      {qty > 1 && selected > 0 && (
-        <div className="flex items-center rounded-md ring-1 ring-inset ring-white/10 flex-shrink-0">
-          <button onClick={() => onChange(selected - 1)} className="btn-icon p-1" aria-label="Un de moins">
-            <Minus size={12} />
-          </button>
-          <span className="w-5 text-center text-xs font-semibold text-white tabular-nums">{selected}</span>
-          <button
-            onClick={() => onChange(Math.min(qty, selected + 1))}
-            disabled={selected >= qty}
-            className="btn-icon p-1"
-            aria-label="Un de plus"
-          >
-            <Plus size={12} />
-          </button>
-        </div>
-      )}
-      <span className={`w-16 text-right text-xs tabular-nums flex-shrink-0 ${price == null ? 'text-slate-600' : 'text-slate-300'}`}>
-        {format(price)}
-      </span>
-    </li>
-  );
-};
-
 /** A searchable, selectable card list with its total. */
 const Panel = ({ title, hint, items, selection, onSelect, format, empty, actions }) => {
   const [query, setQuery] = useState('');
@@ -108,7 +58,7 @@ const Panel = ({ title, hint, items, selection, onSelect, format, empty, actions
   const count = items.reduce((s, i) => s + (selection[i.id] ?? 0), 0);
 
   return (
-    <section data-preview-group className="rounded-2xl bg-white/[0.02] ring-1 ring-inset ring-white/5 p-3 sm:p-4 flex flex-col min-h-0">
+    <section data-preview-group className="rounded-2xl bg-white/[0.02] ring-1 ring-inset ring-white/5 p-3 sm:p-4 flex flex-col min-h-0 min-w-0">
       <div className="flex items-baseline justify-between gap-3 mb-1">
         <h2 className="text-sm font-semibold text-white">{title}</h2>
         <span className="text-xs text-slate-400 tabular-nums">
@@ -146,7 +96,7 @@ const Panel = ({ title, hint, items, selection, onSelect, format, empty, actions
       ) : (
         <ul className="space-y-0.5 overflow-y-auto scrollbar-thin max-h-[55vh] -mx-1 px-1">
           {shown.map((item) => (
-            <Row
+            <TradeRow
               key={item.id}
               item={item}
               selected={selection[item.id] ?? 0}
@@ -161,7 +111,7 @@ const Panel = ({ title, hint, items, selection, onSelect, format, empty, actions
 };
 
 /** Equal-value trades: missing cards of a binder or deck against the user's surplus copies. */
-const TradesView = ({ onOpenSidebar }) => {
+const FreeTrade = () => {
   const { binders, decks, prefs, setPref } = useStore();
   const cardLang = useCardLang();
   const { availableFor } = useCopyAllocation();
@@ -192,23 +142,15 @@ const TradesView = ({ onOpenSidebar }) => {
     if (!index || !source) return [];
     if (source.kind === 'binder') {
       const binder = binders.find((b) => b.id === source.id);
-      const setCards = binder && index.bySet.get(binder.setCode);
-      if (!setCards) return [];
-      const lastRegular = Math.max(
-        0,
-        ...setCards.filter((c) => !SPECIAL_RARITIES.includes(c.rarity)).map((c) => baseNumber(c.number))
-      );
-      const lastNumber = withSpecials
-        ? Math.max(binder.setSize ?? 0, ...setCards.map((c) => baseNumber(c.number)))
-        : (binder.setSize ?? lastRegular);
-      const items = [];
-      for (let n = 1; n <= lastNumber; n++) {
-        if (binder.cards[String(n)]) continue;
-        const card = findPocketCard(index, binder.setCode, n);
-        if (!card || (!withSpecials && SPECIAL_RARITIES.includes(card.rarity))) continue;
-        items.push({ id: card.id, card, foil: false, qty: 1, price: getPrice(card, false) });
-      }
-      return items;
+      return binder
+        ? getBinderMissing(binder, index, withSpecials).map((card) => ({
+            id: card.id,
+            card,
+            foil: false,
+            qty: 1,
+            price: getPrice(card, false),
+          }))
+        : [];
     }
     const deck = decks.find((d) => d.id === source.id);
     if (!deck) return [];
@@ -233,29 +175,13 @@ const TradesView = ({ onOpenSidebar }) => {
   const sourceValue = source ? `${source.kind}:${source.id}` : '';
 
   return (
-    <div className="flex flex-col h-full relative">
-      <header className="px-4 sm:px-6 pt-4 pb-3">
-        <div className="max-w-5xl mx-auto">
-          <div className="flex items-start gap-3">
-            <button onClick={onOpenSidebar} className="btn-icon lg:hidden -ml-2 mt-0.5" aria-label="Ouvrir le menu">
-              <MenuIcon size={20} />
-            </button>
-            <div className="flex-1 min-w-0">
-              <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 ring-1 ring-inset ring-emerald-400/25">
-                Lorcana
-              </span>
-              <h1 className="text-xl sm:text-2xl font-bold text-white mt-1">Échanges</h1>
-            </div>
-          </div>
-          <p className="text-sm text-slate-400 mt-2 leading-relaxed">
+    <>
+      <div className="flex-1 overflow-auto scrollbar-thin px-4 sm:px-6 pt-4 pb-28">
+        <div className="max-w-5xl mx-auto space-y-4">
+          <p className="text-sm text-slate-400 leading-relaxed">
             Choisis les cartes que tu cherches et tes doubles à proposer : Folio équilibre les deux côtés et prépare un
             message à envoyer.
           </p>
-        </div>
-      </header>
-
-      <div className="flex-1 overflow-auto scrollbar-thin px-4 sm:px-6 pb-28">
-        <div className="max-w-5xl mx-auto space-y-4">
           {!index ? (
             <p className="flex items-center justify-center gap-2 py-12 text-sm text-slate-400">
               <Loader2 size={16} className="animate-spin" /> Chargement du catalogue de cartes…
@@ -410,6 +336,63 @@ const TradesView = ({ onOpenSidebar }) => {
           </div>
         </div>
       )}
+    </>
+  );
+};
+
+const TABS = [
+  { key: 'partner', label: 'Avec un joueur', icon: Users },
+  { key: 'free', label: 'Proposition libre', icon: Scale },
+];
+
+/** Trades with another player from the collection they shared, or a free proposal by value. */
+const TradesView = ({ onOpenSidebar, onShareCollection }) => {
+  const { view, setView } = useStore();
+  const tab = TABS.find((t) => t.key === view.tab) ?? TABS[0];
+
+  return (
+    <div className="flex flex-col h-full relative">
+      <header className="px-4 sm:px-6 pt-4 border-b border-white/5">
+        <div className="flex items-start gap-3">
+          <button onClick={onOpenSidebar} className="btn-icon lg:hidden -ml-2 mt-0.5" aria-label="Ouvrir le menu">
+            <MenuIcon size={20} />
+          </button>
+          <div className="flex-1 min-w-0">
+            <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 ring-1 ring-inset ring-emerald-400/25">
+              Lorcana
+            </span>
+            <h1 className="text-xl sm:text-2xl font-bold text-white mt-1">Échanges</h1>
+          </div>
+        </div>
+        <nav className="flex gap-1 mt-3 -mb-px overflow-x-auto scrollbar-thin" role="tablist" aria-label="Façons d'échanger">
+          {TABS.map((t) => {
+            const active = t.key === tab.key;
+            return (
+              <button
+                key={t.key}
+                role="tab"
+                aria-selected={active}
+                onClick={() => setView({ ...view, tab: t.key })}
+                className={`relative flex items-center gap-2 px-3 py-2.5 text-sm whitespace-nowrap transition-colors ${
+                  active ? 'text-white' : 'text-slate-500 hover:text-slate-200'
+                }`}
+              >
+                <t.icon size={15} className={active ? 'text-indigo-300' : ''} />
+                {t.label}
+                {active && (
+                  <motion.span
+                    layoutId="trades-tab"
+                    className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-indigo-400"
+                    transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+                  />
+                )}
+              </button>
+            );
+          })}
+        </nav>
+      </header>
+
+      {tab.key === 'partner' ? <PartnerTrade onShare={onShareCollection} /> : <FreeTrade />}
     </div>
   );
 };

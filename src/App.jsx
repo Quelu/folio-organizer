@@ -10,11 +10,13 @@ import CardPreviewProvider from './components/CardPreview/CardPreviewProvider';
 import DecksView from './components/Decks/DecksView';
 import CollectionView from './components/Collection/CollectionView';
 import TradesView from './components/Trades/TradesView';
+import ShareCollectionModal from './components/Trades/ShareCollectionModal';
 import BinderView from './components/BinderView/BinderView';
 import BinderFormModal from './components/Modals/BinderFormModal';
 import ConfirmDialog from './components/ui/ConfirmDialog';
 import ToastProvider from './components/ui/ToastProvider';
 import { useToast } from './components/ui/toastContext';
+import { parseCollectionShare } from './utils/tradeShare';
 
 // The assistant brings the Anthropic SDK and the Markdown renderer: loaded when first opened
 const AssistantView = lazy(() => import('./components/Assistant/AssistantView'));
@@ -97,6 +99,8 @@ const AppContent = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [focusRequest, setFocusRequest] = useState(null); // { binderId, cardNumber, token }
+  // Collection export for another player, from the trades or from one binder
+  const [shareState, setShareState] = useState({ open: false, binderIds: null });
 
   const store = useBinders();
   const {
@@ -120,6 +124,7 @@ const AppContent = () => {
     resetExports,
     setPref,
     importState,
+    savePartner,
     decks,
     pulls,
     view,
@@ -200,9 +205,21 @@ const AppContent = () => {
     notify({ tone: 'success', message: 'Sauvegarde téléchargée' });
   };
 
+  const openShare = useCallback((binderIds = null) => {
+    setSidebarOpen(false);
+    setShareState({ open: true, binderIds });
+  }, []);
+
   const readBackup = async (file) => {
     try {
       const data = JSON.parse(await file.text());
+      // Another player's collection picked by mistake: open it where it belongs
+      const share = parseCollectionShare(data);
+      if (share) {
+        setView({ kind: 'trades', tab: 'partner', partnerId: savePartner(share) });
+        notify({ tone: 'success', message: `Collection de ${share.owner} importée dans Échanges` });
+        return;
+      }
       if (!Array.isArray(data?.binders)) throw new Error();
       setPendingImport(data);
     } catch {
@@ -224,6 +241,7 @@ const AppContent = () => {
     onEdit: openEdit,
     onDuplicate: handleDuplicate,
     onDelete: requestDelete,
+    onShare: (binder) => openShare([binder.id]),
     onExportBackup: exportBackup,
     onImportBackup: readBackup,
   };
@@ -241,7 +259,7 @@ const AppContent = () => {
               ) : view.kind === 'stats' ? (
                 <CollectionView onOpenSidebar={() => setSidebarOpen(true)} />
               ) : view.kind === 'trades' ? (
-                <TradesView onOpenSidebar={() => setSidebarOpen(true)} />
+                <TradesView onOpenSidebar={() => setSidebarOpen(true)} onShareCollection={() => openShare()} />
               ) : view.kind === 'assistant' ? (
                 <Suspense
                   fallback={
@@ -280,6 +298,12 @@ const AppContent = () => {
             </main>
 
             <CardSearchModal isOpen={searchOpen} onClose={() => setSearchOpen(false)} onLocate={locateCard} />
+
+            <ShareCollectionModal
+              isOpen={shareState.open}
+              initialBinderIds={shareState.binderIds}
+              onClose={() => setShareState((s) => ({ ...s, open: false }))}
+            />
 
             <BinderFormModal
               isOpen={formState.open}

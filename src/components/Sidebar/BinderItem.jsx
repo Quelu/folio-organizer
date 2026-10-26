@@ -1,11 +1,11 @@
-import { MoreHorizontal, Pencil, Copy, Trash2 } from 'lucide-react';
+import { MoreHorizontal, Pencil, Copy, Share2, Trash2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import Menu from '../ui/Menu';
 import ProgressBar from '../ui/ProgressBar';
 import { getGame, getLorcanaSetName } from '../../data/games';
 import { getBinderStats } from '../../utils/calculations';
 
-const BinderItem = ({ binder, isActive, onSelect, onEdit, onDuplicate, onDelete }) => {
+const BinderItem = ({ binder, isActive, onSelect, onEdit, onDuplicate, onDelete, onShare }) => {
   const game = getGame(binder.gameType);
   const { copies, owned, progress } = getBinderStats(binder);
   const subtitle =
@@ -61,6 +61,7 @@ const BinderItem = ({ binder, isActive, onSelect, onEdit, onDuplicate, onDelete 
           items={[
             { label: 'Modifier', icon: Pencil, onClick: onEdit },
             { label: 'Dupliquer (vide)', icon: Copy, onClick: onDuplicate },
+            onShare && { label: 'Partager pour échanger', icon: Share2, onClick: onShare },
             'divider',
             { label: 'Supprimer', icon: Trash2, onClick: onDelete, danger: true },
           ]}
