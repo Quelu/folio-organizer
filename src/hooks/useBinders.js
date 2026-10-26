@@ -89,6 +89,8 @@ export const useBinders = () => {
       setSize: binderData.setSize ?? null,
       gridCols: binderData.gridCols ?? 3,
       gridRows: binderData.gridRows ?? 3,
+      // Ink dividers: each ink starts a new page (see getInkSections), null without them
+      sections: binderData.sections ?? null,
       createdAt: Date.now(),
       cards: {},
     };

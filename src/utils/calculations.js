@@ -1,8 +1,53 @@
 export const getPockets = (gridRows, gridCols) => gridRows * gridCols;
 
-export const getPage = (cardNumber, pockets) => Math.ceil(cardNumber / pockets);
+const segmentCache = new WeakMap();
 
-export const getPositionInPage = (cardNumber, pockets) => (cardNumber - 1) % pockets;
+/**
+ * Where each section of a binder starts. With ink dividers (binder.sections, see getInkSections),
+ * each ink of the set and the cards numbered past it start a new page, the end of the previous page
+ * staying empty. Without them, a single section holds every card.
+ * @returns {{ from: number, slot: number, ink: string|null, label: string|null }[]} from: first card
+ *   number; slot: its pocket, counted from the first pocket of page 1
+ */
+const getSegments = (binder) => {
+  if (segmentCache.has(binder)) return segmentCache.get(binder);
+  const pockets = getPockets(binder.gridRows, binder.gridCols);
+  const sections = binder.sections ?? [];
+  const first = sections[0]?.from === 1 ? sections[0] : null;
+  const segments = [{ from: 1, slot: 0, ink: first?.ink ?? null, label: first?.label ?? null }];
+  let empty = 0; // pockets left empty so far
+  for (const { from, ink = null, label = null } of sections) {
+    if (from <= segments.at(-1).from) continue;
+    const slot = from - 1 + empty;
+    if (slot % pockets) empty += pockets - (slot % pockets);
+    segments.push({ from, slot: from - 1 + empty, ink, label });
+  }
+  segmentCache.set(binder, segments);
+  return segments;
+};
+
+/** Pocket of a card, counted from the first pocket of page 1. */
+const getSlot = (cardNumber, binder) => {
+  const segments = getSegments(binder);
+  const segment = segments.findLast((s) => s.from <= cardNumber) ?? segments[0];
+  return segment.slot + cardNumber - segment.from;
+};
+
+/** Card number of a pocket, null for a pocket left empty before a section. */
+const getCardAtSlot = (slot, binder) => {
+  const segments = getSegments(binder);
+  const i = segments.findLastIndex((s) => s.slot <= slot);
+  const cardNumber = segments[i].from + slot - segments[i].slot;
+  return segments[i + 1] && cardNumber >= segments[i + 1].from ? null : cardNumber;
+};
+
+export const getPage = (cardNumber, binder) =>
+  Math.floor(getSlot(cardNumber, binder) / getPockets(binder.gridRows, binder.gridCols)) + 1;
+
+export const getPositionInPage = (cardNumber, binder) => {
+  const pockets = getPockets(binder.gridRows, binder.gridCols);
+  return ((getSlot(cardNumber, binder) % pockets) + pockets) % pockets;
+};
 
 export const getRow = (position, gridCols) => Math.floor(position / gridCols);
 
@@ -24,9 +69,8 @@ export const getSpreadPages = (spread) => [spread * 2 || null, spread * 2 + 1];
  * @returns {{ page: number, row: number, col: number, sheet: number, side: 'recto'|'verso' }}
  */
 export const getLocation = (cardNumber, binder) => {
-  const pockets = getPockets(binder.gridRows, binder.gridCols);
-  const page = getPage(cardNumber, pockets);
-  const position = getPositionInPage(cardNumber, pockets);
+  const page = getPage(cardNumber, binder);
+  const position = getPositionInPage(cardNumber, binder);
   return {
     page,
     row: getRow(position, binder.gridCols) + 1,
@@ -37,14 +81,27 @@ export const getLocation = (cardNumber, binder) => {
 };
 
 /**
- * Returns the list of card numbers that should appear on a given page.
+ * Card numbers of a page's pockets, in order; null for a pocket left empty before a section.
  * @param {number} page - 1-indexed page number
- * @param {number} pockets - total pockets per page
- * @returns {number[]}
+ * @returns {(number|null)[]}
  */
-export const getCardsOnPage = (page, pockets) => {
-  const start = (page - 1) * pockets + 1;
-  return Array.from({ length: pockets }, (_, i) => start + i);
+export const getCardsOnPage = (page, binder) => {
+  const pockets = getPockets(binder.gridRows, binder.gridCols);
+  const start = (page - 1) * pockets;
+  return Array.from({ length: pockets }, (_, i) => getCardAtSlot(start + i, binder));
+};
+
+/** Pages the binder needs: the whole set, and every card owned past it. */
+export const getPageCount = (binder) => {
+  const last = Object.keys(binder.cards).reduce((max, num) => Math.max(max, parseInt(num, 10) || 0), binder.setSize ?? 0);
+  return Math.max(1, last ? getPage(last, binder) : 1);
+};
+
+/** Section (ink or cards past the set) a page belongs to, null without ink dividers. */
+export const getPageSection = (page, binder) => {
+  if (!binder.sections?.length) return null;
+  const slot = (page - 1) * getPockets(binder.gridRows, binder.gridCols);
+  return getSegments(binder).findLast((s) => s.slot <= slot) ?? null;
 };
 
 /**

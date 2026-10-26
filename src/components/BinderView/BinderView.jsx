@@ -2,8 +2,8 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ChevronsLeft, ChevronsRight } from 'lucide-react';
 import {
-  getPockets,
   getPage,
+  getPageCount,
   getSpread,
   getSpreadPages,
   getCardsOnPage,
@@ -57,14 +57,7 @@ const BinderView = ({
   const canSpread = useMediaQuery('(min-width: 1024px)');
   const spreadMode = canSpread && prefs.viewMode === 'spread';
 
-  const pockets = getPockets(binder.gridRows, binder.gridCols);
-  const maxCardNumber = Object.keys(binder.cards).reduce((max, num) => Math.max(max, parseInt(num, 10)), 0);
-  const totalPages = Math.max(
-    1,
-    currentPage,
-    binder.setSize ? Math.ceil(binder.setSize / pockets) : 0,
-    Math.ceil(maxCardNumber / pockets)
-  );
+  const totalPages = Math.max(currentPage, getPageCount(binder));
 
   // Cleanup timers on unmount
   useEffect(() => {
@@ -78,8 +71,8 @@ const BinderView = ({
   // Fetch missing card images for the visible pages
   const visiblePages = spreadMode ? getSpreadPages(getSpread(currentPage)).filter(Boolean) : [currentPage];
   const missingImages = visiblePages
-    .flatMap((p) => getCardsOnPage(p, pockets))
-    .filter((n) => binder.cards[String(n)] && !binder.cards[String(n)].imageUrl);
+    .flatMap((p) => getCardsOnPage(p, binder))
+    .filter((n) => n && binder.cards[String(n)] && !binder.cards[String(n)].imageUrl);
   const missingKey = missingImages.join(',');
   useEffect(() => {
     if (missingKey && binder.gameType === 'lorcana') {
@@ -122,7 +115,7 @@ const BinderView = ({
   /** Moves to the card's page, pulses it and tells how many sheets to turn in the real binder. */
   const focusCard = useCallback(
     (cardNumber, kind = 'locate') => {
-      const page = getPage(cardNumber, pockets);
+      const page = getPage(cardNumber, binder);
       const forward = page >= currentPage;
 
       // An open binder shows a spread (verso of a sheet + recto of the next one): every sheet
@@ -140,7 +133,7 @@ const BinderView = ({
       setCurrentPage(page);
       pulseCard(cardNumber, kind);
     },
-    [pockets, currentPage, pulseCard]
+    [binder, currentPage, pulseCard]
   );
 
   /** Celebrates pages (and the whole set) that the given additions complete. */
@@ -149,10 +142,10 @@ const BinderView = ({
       const newNumbers = [...new Set(entries.map((e) => e.cardNumber))].filter((n) => !binder.cards[String(n)]);
       if (newNumbers.length === 0) return;
 
-      const completed = [...new Set(newNumbers.map((n) => getPage(n, pockets)))].filter((page) =>
-        getCardsOnPage(page, pockets).every((n) => binder.cards[String(n)] || newNumbers.includes(n))
+      const completed = [...new Set(newNumbers.map((n) => getPage(n, binder)))].filter((page) =>
+        getCardsOnPage(page, binder).every((n) => !n || binder.cards[String(n)] || newNumbers.includes(n))
       );
-      const lastPage = getPage(entries[entries.length - 1].cardNumber, pockets);
+      const lastPage = getPage(entries[entries.length - 1].cardNumber, binder);
       const page = completed.includes(lastPage) ? lastPage : completed[0];
       if (page) {
         setCelebrate({ page, token: ++tokenRef.current });
@@ -169,7 +162,7 @@ const BinderView = ({
         }
       }
     },
-    [binder, pockets, notify]
+    [binder, notify]
   );
 
   const handleAdd = useCallback(
@@ -238,10 +231,10 @@ const BinderView = ({
     (cardNumber) => {
       if (cardNumber < 1) return;
       setDetailCard(cardNumber);
-      const page = getPage(cardNumber, pockets);
+      const page = getPage(cardNumber, binder);
       if (page !== currentPage) navigateTo(page);
     },
-    [pockets, currentPage, navigateTo]
+    [binder, currentPage, navigateTo]
   );
 
   const handleSetCounts = useCallback(
