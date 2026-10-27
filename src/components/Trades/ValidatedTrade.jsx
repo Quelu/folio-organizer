@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, MapPin, PackageCheck, Pencil, X } from 'lucide-react';
+import { useCallback, useMemo, useState } from 'react';
+import { AlertTriangle, CheckCircle2, ListOrdered, MapPin, PackageCheck, Pencil, X } from 'lucide-react';
 import { useStore } from '../../hooks/storeContext';
 import { useCatalog } from '../../hooks/catalogContext';
 import { useCollection } from '../../hooks/useCollection';
@@ -21,6 +21,8 @@ import CardThumb from '../ui/CardThumb';
 import CopyButton from '../ui/CopyButton';
 import ConfirmDialog from '../ui/ConfirmDialog';
 import ProgressBar from '../ui/ProgressBar';
+import { PocketHint } from './PocketMap';
+import TradeWizard from './TradeWizard';
 
 const plural = (n, word) => `${n.toLocaleString('fr-BE')} ${word}${n > 1 ? 's' : ''}`;
 
@@ -47,9 +49,18 @@ const groupByBinder = (rows) => {
   return groups;
 };
 
-/** One copy line of the trade: checkbox, card, where it is or goes, and a way to open the binder there. */
-const TradeLine = ({ row, checked, onCheck, checkLabel, where, onLocate, format }) => {
+/**
+ * One copy line of the trade: checkbox, card, where it is or goes (its page shown on hover), and a
+ * way to open the binder there.
+ * @param {{ binder, cardNumber, mode, card? }|null} pocket the pocket, for its page preview
+ */
+const TradeLine = ({ row, checked, onCheck, checkLabel, where, pocket, onLocate, format }) => {
   const cardLang = useCardLang();
+  // Box of the hovered location: its page floats next to it
+  const [anchor, setAnchor] = useState(null);
+  const hide = useCallback(() => setAnchor(null), []);
+  const show = (e) => setAnchor(e.currentTarget.getBoundingClientRect());
+  const bind = pocket ? { onMouseEnter: show, onMouseLeave: hide, onFocus: show, onBlur: hide } : {};
   const { card, foil, qty, price } = row;
   return (
     <li
@@ -75,13 +86,24 @@ const TradeLine = ({ row, checked, onCheck, checkLabel, where, onLocate, format 
           {getTradeClassLabel(card.rarity ?? '?').label} · {getLorcanaSetName(card.set) ?? `Set ${card.set}`} n° {card.number}
           {price != null && <> · {format(price * qty)}</>}
         </div>
-        {where && <div className="text-[11px] text-slate-400 leading-snug mt-0.5">{where}</div>}
+        {where && (
+          <div
+            {...bind}
+            tabIndex={pocket ? 0 : undefined}
+            className={`text-[11px] text-slate-400 leading-snug mt-0.5 rounded outline-none ${
+              pocket ? 'cursor-help underline decoration-dotted decoration-slate-600 underline-offset-2 hover:text-white focus-visible:text-white' : ''
+            }`}
+          >
+            {where}
+          </div>
+        )}
       </div>
       {onLocate && (
-        <button onClick={onLocate} className="btn-icon flex-shrink-0" title="Voir dans la farde" aria-label="Voir dans la farde">
+        <button {...bind} onClick={onLocate} className="btn-icon flex-shrink-0" title="Ouvrir la farde à cette page" aria-label="Ouvrir la farde à cette page">
           <MapPin size={16} />
         </button>
       )}
+      {anchor && pocket && <PocketHint pocket={pocket} anchor={anchor} onClose={hide} />}
     </li>
   );
 };
@@ -121,6 +143,7 @@ const ValidatedTrade = ({ partner, toolbar, scale, onEdit, onLocate }) => {
   const notify = useToast();
   const { format } = usePrices();
   const [confirm, setConfirm] = useState(null);
+  const [guided, setGuided] = useState(false);
   const { trade, owner } = partner;
   const found = new Set(trade.found ?? []);
 
@@ -157,6 +180,19 @@ const ValidatedTrade = ({ partner, toolbar, scale, onEdit, onLocate }) => {
   const pulledTotal = pull.rows.reduce((s, r) => s + r.take, 0);
   const inDone = incoming.filter((r) => found.has(r.rowId)).reduce((s, r) => s + r.qty, 0);
   const homeless = incoming.filter((r) => !r.dest);
+  // The guided pass: the pockets to empty in page order, then the ones to fill
+  const steps = [
+    ...pull.rows.map((r) => ({ id: r.id, kind: 'out', card: r.card, foil: r.foil, qty: r.take, binder: r.binder, cardNumber: r.cardNumber })),
+    ...incoming.map((r) => ({
+      id: r.rowId,
+      kind: 'in',
+      card: r.card,
+      foil: r.foil,
+      qty: r.qty,
+      binder: r.dest?.binder ?? null,
+      cardNumber: r.dest?.cardNumber ?? null,
+    })),
+  ];
 
   const giveGroups = groupByBinder(pull.rows).map(({ binder, rows }) => ({
     label: `${binder.name} · ${plural(rows.reduce((s, r) => s + r.take, 0), 'carte')}`,
@@ -168,6 +204,7 @@ const ValidatedTrade = ({ partner, toolbar, scale, onEdit, onLocate }) => {
         onCheck={(on) => toggle(row.id, on)}
         checkLabel="Trouvée dans la farde"
         where={<>n° {row.cardNumber} · {describeLocation(row.location)}</>}
+        pocket={{ binder: row.binder, cardNumber: row.cardNumber, mode: 'out' }}
         onLocate={() => onLocate(row.binder.id, parseInt(row.cardNumber, 10))}
         format={format}
       />
@@ -184,6 +221,7 @@ const ValidatedTrade = ({ partner, toolbar, scale, onEdit, onLocate }) => {
         onCheck={(on) => toggle(row.rowId, on)}
         checkLabel="Reçue"
         where={row.dest ? <>n° {row.dest.cardNumber} · {describeLocation(row.dest.location)}</> : 'À ranger à la main'}
+        pocket={row.dest ? { binder: row.dest.binder, cardNumber: row.dest.cardNumber, mode: 'in', card: row.card } : null}
         onLocate={row.dest ? () => onLocate(row.dest.binder.id, parseInt(row.dest.cardNumber, 10)) : null}
         format={format}
       />
@@ -276,6 +314,17 @@ const ValidatedTrade = ({ partner, toolbar, scale, onEdit, onLocate }) => {
           </p>
         </section>
 
+        <div className="rounded-2xl bg-indigo-500/[0.06] ring-1 ring-inset ring-indigo-400/25 p-4 flex flex-wrap items-center gap-3">
+          <ListOrdered size={18} className="text-indigo-300 flex-shrink-0" />
+          <p className="text-xs text-slate-300 leading-relaxed flex-1 min-w-[14rem]">
+            <b className="text-white">Mode guidé</b> : Folio te montre chaque pochette à vider, farde par farde dans
+            l’ordre des pages, puis chaque pochette où ranger les cartes reçues.
+          </p>
+          <button onClick={() => setGuided(true)} className="btn-primary px-3 py-2">
+            {pulledDone + inDone > 0 ? 'Reprendre le mode guidé' : 'Commencer'}
+          </button>
+        </div>
+
         <div className="grid lg:grid-cols-2 gap-4 items-start">
           <TradeColumn
             title={`Tu donnes à ${owner}`}
@@ -322,6 +371,19 @@ const ValidatedTrade = ({ partner, toolbar, scale, onEdit, onLocate }) => {
           </button>
         </div>
       </div>
+
+      <TradeWizard
+        isOpen={guided}
+        onClose={() => setGuided(false)}
+        owner={owner}
+        steps={steps}
+        found={found}
+        onCheck={toggle}
+        onComplete={() => {
+          setGuided(false);
+          setConfirm(true);
+        }}
+      />
 
       <ConfirmDialog
         isOpen={Boolean(confirm)}
