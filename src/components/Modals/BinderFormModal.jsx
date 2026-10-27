@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import Modal from '../ui/Modal';
 import { GAMES, GRID_PRESETS, getGame, getLorcanaSetName } from '../../data/games';
 import { useLorcanaSets } from '../../hooks/useLorcanaSets';
+import { useCatalog } from '../../hooks/catalogContext';
+import { getInkSections, INKS } from '../../utils/catalog';
 
 const toForm = (binder) =>
   binder
@@ -13,8 +15,9 @@ const toForm = (binder) =>
         setSize: binder.setSize ?? '',
         gridCols: binder.gridCols,
         gridRows: binder.gridRows,
+        inkDividers: Boolean(binder.sections?.length),
       }
-    : { name: '', gameType: 'lorcana', setCode: null, setSize: 204, gridCols: 3, gridRows: 3 };
+    : { name: '', gameType: 'lorcana', setCode: null, setSize: 204, gridCols: 3, gridRows: 3, inkDividers: false };
 
 /** Mini grid preview used on the grid preset tiles. */
 const GridGlyph = ({ cols, rows, active }) => (
@@ -31,7 +34,9 @@ const GridGlyph = ({ cols, rows, active }) => (
 const FormBody = ({ binder, onClose, onSubmit }) => {
   const [form, setForm] = useState(() => toForm(binder));
   const lorcanaSets = useLorcanaSets();
+  const { index } = useCatalog();
   const isEdit = Boolean(binder);
+  const isLorcana = form.gameType === 'lorcana';
 
   const update = (patch) => setForm((f) => ({ ...f, ...patch }));
 
@@ -43,14 +48,19 @@ const FormBody = ({ binder, onClose, onSubmit }) => {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!form.name.trim()) return;
-    const setSize = parseInt(form.setSize, 10);
+    const setSize = parseInt(form.setSize, 10) > 0 ? parseInt(form.setSize, 10) : null;
+    const setCode = isLorcana ? (form.setCode ?? lorcanaSets[lorcanaSets.length - 1].code) : '';
+    // Ink boundaries from the catalog; the saved ones while it loads
+    const sections =
+      isLorcana && form.inkDividers ? (index ? getInkSections(index, setCode, setSize) : (binder?.sections ?? [])) : [];
     onSubmit({
       name: form.name,
       gameType: form.gameType,
-      setCode: form.gameType === 'lorcana' ? (form.setCode ?? lorcanaSets[lorcanaSets.length - 1].code) : '',
-      setSize: setSize > 0 ? setSize : null,
+      setCode,
+      setSize,
       gridCols: form.gridCols,
       gridRows: form.gridRows,
+      sections: sections.length ? sections : null,
     });
     onClose();
   };
@@ -155,6 +165,36 @@ const FormBody = ({ binder, onClose, onSubmit }) => {
           </p>
         )}
       </div>
+
+      {isLorcana && (
+        <label className="flex items-start gap-3 cursor-pointer select-none rounded-lg bg-white/[0.03] ring-1 ring-inset ring-white/10 p-3">
+          <input
+            type="checkbox"
+            checked={form.inkDividers}
+            onChange={(e) => update({ inkDividers: e.target.checked })}
+            disabled={!index && !binder?.sections}
+            className="mt-0.5 w-4 h-4 accent-indigo-500"
+          />
+          <span className="min-w-0">
+            <span className="flex items-center gap-2 text-sm font-semibold text-white">
+              Intercalaires par encre
+              <span className="flex -space-x-0.5">
+                {INKS.map((ink) => (
+                  <span key={ink.key} className="w-2 h-2 rounded-full ring-1 ring-slate-950" style={{ background: ink.color }} />
+                ))}
+              </span>
+            </span>
+            <span className="block text-xs text-slate-500 mt-0.5 leading-relaxed">
+              {index || binder?.sections
+                ? 'Chaque encre commence sur une nouvelle page, comme les cartes hors set : la fin de la page précédente reste vide.'
+                : 'Disponible une fois le catalogue chargé.'}
+              {isEdit && Boolean(binder.sections?.length) !== form.inkDividers && (
+                <span className="block text-amber-300/90 mt-1">Les cartes changeront de place : réorganise ta farde après.</span>
+              )}
+            </span>
+          </span>
+        </label>
+      )}
 
       <div>
         <label className="label" htmlFor="binder-size">

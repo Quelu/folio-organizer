@@ -1,5 +1,20 @@
 import { useRef, useState } from 'react';
-import { Plus, Search, Download, Upload, Library, X, Layers, LayoutGrid, ArrowLeftRight, Sparkles } from 'lucide-react';
+import {
+  Plus,
+  Search,
+  Download,
+  Upload,
+  Library,
+  X,
+  Layers,
+  LayoutGrid,
+  ArrowLeftRight,
+  Sparkles,
+  CalendarClock,
+  FolderSync,
+  FolderOpen,
+  AlertTriangle,
+} from 'lucide-react';
 import { motion, AnimatePresence, LayoutGroup } from 'motion/react';
 import BinderItem from './BinderItem';
 import CatalogStatus from './CatalogStatus';
@@ -8,8 +23,60 @@ const NAV_ITEMS = [
   { kind: 'decks', label: 'Decks', icon: Layers },
   { kind: 'stats', label: 'Collection', icon: LayoutGrid },
   { kind: 'trades', label: 'Échanges', icon: ArrowLeftRight },
+  { kind: 'rotation', label: 'Rotation', icon: CalendarClock },
   { kind: 'assistant', label: 'Assistant IA', icon: Sparkles },
 ];
+
+const formatTime = (at) => new Date(at).toLocaleTimeString('fr-BE', { hour: '2-digit', minute: '2-digit' });
+
+/**
+ * Automatic backup into a folder (see useAutoBackup): off, on with the last write, or paused
+ * until a click gives the browser the right to write again.
+ */
+const AutoBackupRow = ({ autoBackup, onChoose }) => {
+  if (!autoBackup?.supported) return null;
+  const { status, folderName, savedAt, resume, stop } = autoBackup;
+  if (status === 'off') {
+    return (
+      <button
+        onClick={onChoose}
+        className="btn-icon w-full justify-start gap-2 text-xs"
+        title="Écrit une sauvegarde dans un dossier à chaque changement, par exemple pour le serveur MCP de Claude Desktop"
+      >
+        <FolderSync size={14} /> Sauvegarde auto dans un dossier…
+      </button>
+    );
+  }
+  if (status !== 'on') {
+    return (
+      <button
+        onClick={status === 'paused' ? resume : onChoose}
+        className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs text-amber-300 hover:bg-amber-400/10 transition-colors"
+        title={status === 'paused' ? `Autoriser à nouveau l'écriture dans « ${folderName} »` : 'Choisir un autre dossier'}
+      >
+        <AlertTriangle size={14} className="flex-shrink-0" />
+        <span className="truncate">
+          {status === 'paused' ? 'Sauvegarde auto en pause : reprendre' : 'Échec de la sauvegarde auto : changer de dossier'}
+        </span>
+      </button>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1 pl-2 text-xs text-slate-500">
+      <FolderSync size={14} className="flex-shrink-0 text-emerald-400/80" />
+      <span className="flex-1 min-w-0 truncate" title={`Sauvegarde automatique dans « ${folderName} »`}>
+        Auto · {folderName}
+        {savedAt && <span className="text-slate-600"> · {formatTime(savedAt)}</span>}
+      </span>
+      <button onClick={onChoose} className="btn-icon p-1.5" title="Changer de dossier" aria-label="Changer le dossier de sauvegarde">
+        <FolderOpen size={13} />
+      </button>
+      <button onClick={stop} className="btn-icon p-1.5" title="Arrêter la sauvegarde automatique" aria-label="Arrêter la sauvegarde automatique">
+        <X size={13} />
+      </button>
+    </div>
+  );
+};
 
 /** Collection-wide screens, above the binder list. */
 const NavItem = ({ item, isActive, badge, onClick }) => (
@@ -43,6 +110,8 @@ const SidebarContent = ({
   onShare,
   onExportBackup,
   onImportBackup,
+  autoBackup,
+  onChooseBackupFolder,
   onClose,
 }) => {
   const [query, setQuery] = useState('');
@@ -171,7 +240,10 @@ const SidebarContent = ({
         </div>
       </div>
 
-      <div className="p-3 flex gap-1">
+      <div className="px-3 pt-2">
+        <AutoBackupRow autoBackup={autoBackup} onChoose={onChooseBackupFolder} />
+      </div>
+      <div className="p-3 pt-1 flex gap-1">
         <button
           onClick={onExportBackup}
           disabled={binders.length === 0}

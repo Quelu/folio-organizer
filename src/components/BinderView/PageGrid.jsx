@@ -1,28 +1,42 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { Sparkles } from 'lucide-react';
-import { getCardsOnPage, getSheet } from '../../utils/calculations';
+import { getCardsOnPage, getPageSection, getSheet } from '../../utils/calculations';
 import { getGame } from '../../data/games';
-import { findPocketCard } from '../../utils/catalog';
+import { findPocketCard, getInk, getSectionLabel } from '../../utils/catalog';
 import { useCatalog } from '../../hooks/catalogContext';
 import { useCardLang } from '../../hooks/useCardLang';
 import Confetti from '../ui/Confetti';
 import GridPocket from './GridPocket';
 
+// Pockets left empty before an ink divider (null numbers) do not count
 const getPageInfo = (binder, page) => {
-  const pockets = binder.gridRows * binder.gridCols;
-  const cardNumbers = getCardsOnPage(page, pockets);
-  const filled = cardNumbers.filter((n) => binder.cards[String(n)]).length;
-  return { pockets, cardNumbers, filled, complete: filled === pockets };
+  const cardNumbers = getCardsOnPage(page, binder);
+  const pockets = cardNumbers.filter(Boolean).length;
+  const filled = cardNumbers.filter((n) => n && binder.cards[String(n)]).length;
+  return { pockets, cardNumbers, filled, complete: pockets > 0 && filled === pockets };
 };
+
+/** Ink divider name shown on the first page of its section. */
+const SectionTag = ({ section }) => (
+  <span className="self-center flex items-center gap-1.5 px-1.5 py-0.5 rounded-md bg-white/[0.05] text-[10px] font-semibold text-slate-300">
+    <span
+      className="w-2 h-2 rounded-full"
+      style={{ background: section.ink ? getInk(section.ink.split('/')[0]).color : '#64748b' }}
+    />
+    {getSectionLabel(section)}
+  </span>
+);
 
 /** "Page N" label row shown above a page panel. */
 export const PageHeader = ({ binder, page }) => {
   const { pockets, filled, complete } = getPageInfo(binder, page);
+  const section = getPageSection(page, binder);
   return (
     <div className="flex items-baseline justify-between mb-2.5 px-1">
       <div className="flex items-baseline gap-2">
         <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Page</span>
         <span className="text-2xl font-black text-white tabular-nums leading-none">{page}</span>
+        {section && <SectionTag section={section} />}
         <AnimatePresence>
           {complete && (
             <motion.span
@@ -76,24 +90,29 @@ export const PagePanel = ({
           className={`grid ${compact ? 'gap-2' : 'gap-2.5 sm:gap-3'}`}
           style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}
         >
-          {cardNumbers.map((num) => (
-            <GridPocket
-              key={num}
-              cardNumber={num}
-              cardData={cards[String(num)]}
-              catalogImage={cardLang.image(pocketCard(num), 'small')}
-              foilMask={cardLang.foilMask(pocketCard(num))}
-              isHighlighted={highlight?.cardNumber === num}
-              isLastAdded={lastAddedCard === num}
-              pulled={pulledByPocket[String(num)]}
-              pulse={highlight?.cardNumber === num ? highlight : null}
-              pocketStyle={pocketStyle}
-              outOfSet={Boolean(setSize && num > setSize)}
-              onOpen={onOpenCard}
-              onStep={onStepCard}
-              compact={compact}
-            />
-          ))}
+          {cardNumbers.map((num, i) =>
+            num == null ? (
+              // Left empty so the next ink starts on a new page
+              <div key={`empty-${i}`} className="aspect-[5/7] rounded-lg border border-dashed border-white/[0.06]" aria-hidden="true" />
+            ) : (
+              <GridPocket
+                key={num}
+                cardNumber={num}
+                cardData={cards[String(num)]}
+                catalogImage={cardLang.image(pocketCard(num), 'small')}
+                foilMask={cardLang.foilMask(pocketCard(num))}
+                isHighlighted={highlight?.cardNumber === num}
+                isLastAdded={lastAddedCard === num}
+                pulled={pulledByPocket[String(num)]}
+                pulse={highlight?.cardNumber === num ? highlight : null}
+                pocketStyle={pocketStyle}
+                outOfSet={Boolean(setSize && num > setSize)}
+                onOpen={onOpenCard}
+                onStep={onStepCard}
+                compact={compact}
+              />
+            )
+          )}
         </div>
       </div>
 

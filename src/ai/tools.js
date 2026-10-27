@@ -1,5 +1,6 @@
 import { formatCardLine, matchesQuery, getMainPrinting, getLegality, normalizeName, FORMATS } from '../utils/catalog';
 import { analyzeDeck } from '../utils/deckRules';
+import { formatDeckProfile } from '../utils/deckProfile';
 import { getCopyAllocation } from '../utils/collection';
 import { getTradeableSurplus, suggestTrades } from '../utils/trades';
 
@@ -183,6 +184,7 @@ export const createToolRunner = ({ index, collection, decks, allocations = {}, p
         `${deck.name} (${deck.format}, ${a.total} cartes, encres ${a.inks.join('/') || '—'})`,
         deck.notes ? `Notes : ${deck.notes}` : null,
         `Courbe (0…7+) : ${a.curve.join(' ')} · encrables ${a.inkable}/${a.total} · coût moyen ${a.averageCost.toFixed(2)}`,
+        ...formatDeckProfile(a.profile),
         ...a.errors.map((e) => `ERREUR : ${e.message}`),
         ...a.warnings.map((w) => `Attention : ${w.message}`),
         `Possédé : ${a.owned}/${a.total}`,

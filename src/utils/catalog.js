@@ -200,6 +200,30 @@ export const findPocketCard = (index, setCode, number) => {
   return cards.find((c) => c.number === num) ?? cards.find((c) => baseNumber(c.number) === baseNumber(num)) ?? null;
 };
 
+/**
+ * Binder sections of a chapter: where each ink starts in its numbering (Amber 1, Amethyst 35…),
+ * then the cards numbered past the set (Enchanted, Epic…). Each starts a new binder page.
+ * @returns {{ from: number, ink?: string, label?: string }[]} empty when the chapter is unknown
+ */
+export const getInkSections = (index, setCode, setSize) => {
+  const cards = index.bySet.get(String(setCode)) ?? [];
+  const sections = [];
+  for (const card of cards) {
+    const n = baseNumber(card.number);
+    if (n < 1 || (setSize && n > setSize)) continue;
+    const ink = card.inks.join('/');
+    if (sections.at(-1)?.ink !== ink && sections.at(-1)?.from !== n) sections.push({ from: n, ink });
+  }
+  if (sections.length === 0) return [];
+  sections[0].from = 1;
+  if (setSize && cards.some((c) => baseNumber(c.number) > setSize)) sections.push({ from: setSize + 1, label: 'Hors set' });
+  return sections;
+};
+
+/** Name of a binder section: "Ambre", "Ambre / Améthyste", "Hors set". */
+export const getSectionLabel = (section) =>
+  section.label ?? (section.ink ?? '').split('/').map((ink) => getInk(ink).label).join(' / ');
+
 /** The regular (non alternate-art) printing of a card, newest set first, for images and buying. */
 export const getMainPrinting = (index, key) => {
   const printings = index.byKey.get(key) ?? [];

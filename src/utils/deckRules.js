@@ -8,6 +8,7 @@ import {
   FORMATS,
 } from './catalog.js';
 import { getOwned } from './collection.js';
+import { getDeckProfile, keywordLabel } from './deckProfile.js';
 
 /**
  * A deck is { id, name, kind: 'mine'|'reference', format: 'core'|'infinity', cards, notes, source,
@@ -34,7 +35,31 @@ export const describeChapters = (codes) => {
     : `chapitres ${codes.slice(0, -1).join(', ')} et ${codes.at(-1)}`;
 };
 
-const formatDate = (date) => new Date(date).toLocaleDateString('fr-BE', { day: 'numeric', month: 'long', year: 'numeric' });
+export const formatLongDate = (date) => new Date(date).toLocaleDateString('fr-BE', { day: 'numeric', month: 'long', year: 'numeric' });
+
+/**
+ * The next Core rotation: the chapters leaving Core together (their group from the official data,
+ * else the oldest Core chapter), its date when known, and whether a card leaves Core with them.
+ * @returns {{ sets: string[], date: string|null, coreSets: string[], active: boolean, leaves: (key: string) => boolean }}
+ *   active: whether other chapters stay in Core (otherwise every card would be flagged)
+ */
+export const getNextRotation = (index) => {
+  const coreSets = getCoreSets(index);
+  const sets = index.rotation?.next.sets ?? (coreSets.length > 1 ? [coreSets[0]] : []);
+  const active = sets.length > 0 && coreSets.some((s) => !sets.includes(s));
+  return {
+    sets,
+    date: index.rotation?.next.date ?? null,
+    coreSets,
+    active,
+    leaves: (key) => {
+      if (!active) return false;
+      // Chapters in Core printing the card (an old printing stays playable through its reprint)
+      const coreChapters = (index.byKey.get(key) ?? []).map((c) => c.set).filter((set) => coreSets.includes(set));
+      return coreChapters.length > 0 && coreChapters.every((set) => sets.includes(set));
+    },
+  };
+};
 
 /** Most copies allowed: 4, unless the card says otherwise ("You may have up to 99 copies…"). */
 export const getMaxCopies = (card) => {
@@ -69,12 +94,14 @@ export const analyzeDeck = (deck, index, collection = null, lang = 'en', availab
 
   const inks = [...new Set(entries.flatMap((e) => e.card?.inks ?? []))];
   const curve = Array.from({ length: 8 }, () => 0); // 0…6, 7+
+  const uninkableCurve = Array.from({ length: 8 }, () => 0);
   const types = {};
   let inkable = 0;
   let costSum = 0;
   for (const { card, qty } of entries) {
     if (!card) continue;
     curve[Math.min(card.cost, 7)] += qty;
+    if (!card.inkwell) uninkableCurve[Math.min(card.cost, 7)] += qty;
     const type = getMainType(card);
     types[type] = (types[type] ?? 0) + qty;
     if (card.inkwell) inkable += qty;
@@ -92,26 +119,19 @@ export const analyzeDeck = (deck, index, collection = null, lang = 'en', availab
     errors.push({ code: 'inks', message: `${inks.length} encres (${inks.join(', ')}) : ${MAX_INKS} maximum.` });
   }
 
-  // Legality in each format, and Core cards only kept legal by the chapters leaving at the next
-  // rotation: its group from the official data, else the oldest Core chapter
+  // Legality in each format, and Core cards only kept legal by the chapters leaving at the next rotation
   const legality = {};
-  const coreSets = index ? getCoreSets(index) : [];
-  const rotationSets = index?.rotation?.next.sets ?? (coreSets.length > 1 ? [coreSets[0]] : []);
-  const rotationDate = index?.rotation?.next.date ?? null;
-  const rotating = [];
+  const rotation = index ? getNextRotation(index) : null;
+  const coreSets = rotation?.coreSets ?? [];
+  const rotationSets = rotation?.sets ?? [];
+  const rotationDate = rotation?.date ?? null;
+  const rotating = rotation ? entries.filter((e) => rotation.leaves(e.key)) : [];
+  let profile = null;
   if (index) {
     for (const { key: format } of FORMATS) {
       legality[format] = entries
         .map((e) => ({ entry: e, status: getLegality(index, e.key, format) }))
         .filter((x) => x.status && x.status !== 'legal');
-    }
-    // Only when another group stays in Core: otherwise every card would be flagged
-    if (rotationSets.length && coreSets.some((s) => !rotationSets.includes(s))) {
-      for (const e of entries) {
-        // Chapters in Core printing the card (an old printing stays playable through its reprint)
-        const coreChapters = (index.byKey.get(e.key) ?? []).map((c) => c.set).filter((set) => coreSets.includes(set));
-        if (coreChapters.length && coreChapters.every((set) => rotationSets.includes(set))) rotating.push(e);
-      }
     }
     const illegal = legality[deck.format] ?? [];
     for (const { entry, status } of illegal) {
@@ -124,7 +144,7 @@ export const analyzeDeck = (deck, index, collection = null, lang = 'en', availab
     if (deck.format === 'core' && rotating.length) {
       const plural = rotating.length > 1 ? 's' : '';
       const several = rotationSets.length > 1;
-      const when = rotationDate ? ` (le ${formatDate(rotationDate)})` : '';
+      const when = rotationDate ? ` (le ${formatLongDate(rotationDate)})` : '';
       warnings.push({
         code: 'rotation',
         message: `${rotating.length} carte${plural} légale${plural} en Core uniquement via ${several ? 'les' : 'le'} ${describeChapters(rotationSets)}, qui ${several ? 'quitteront' : 'quittera'} le Core à la prochaine rotation${when}.`,
@@ -134,6 +154,23 @@ export const analyzeDeck = (deck, index, collection = null, lang = 'en', availab
     const unknown = entries.filter((e) => !e.card);
     if (unknown.length) {
       warnings.push({ code: 'unknown', message: `${unknown.length} carte(s) introuvable(s) dans le catalogue.` });
+    }
+    profile = getDeckProfile(entries, index, lang);
+    const orphans = profile.shifts.filter((s) => s.baseCopies === 0);
+    if (orphans.length) {
+      warnings.push({
+        code: 'shift',
+        message: `${keywordLabel('Shift', lang)} sans personnage du deck sur lequel se poser : ${orphans.map((s) => nameOf(s.entry)).join(', ')}.`,
+        keys: orphans.map((s) => s.entry.key),
+      });
+    }
+    const unsung = profile.characters.copies ? profile.songs.filter((s) => s.singerCopies === 0 && !s.together) : [];
+    if (unsung.length) {
+      warnings.push({
+        code: 'song',
+        message: `Aucun personnage du deck ne peut chanter ${unsung.map((s) => `${nameOf(s.entry)} (coût ${s.cost})`).join(', ')}.`,
+        keys: unsung.map((s) => s.entry.key),
+      });
     }
     if (total >= 20 && inkable / total < 0.6) {
       warnings.push({
@@ -151,6 +188,7 @@ export const analyzeDeck = (deck, index, collection = null, lang = 'en', availab
     total,
     inks,
     curve,
+    uninkableCurve,
     types,
     inkable,
     averageCost: total ? costSum / total : 0,
@@ -161,6 +199,7 @@ export const analyzeDeck = (deck, index, collection = null, lang = 'en', availab
     rotationSets,
     rotationDate,
     coreSets,
+    profile,
     owned,
     ownedRatio: total ? owned / total : 0,
     missing,

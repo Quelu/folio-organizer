@@ -1,6 +1,6 @@
 import { findPocketCard } from './catalog.js';
 import { getCounts } from './cards.js';
-import { getLocation, getPockets, getPositionInPage } from './calculations.js';
+import { getLocation, getPositionInPage } from './calculations.js';
 
 /**
  * Cards pulled out of a binder for a deck: { id, deckId, binderId, cardNumber, qty }.
@@ -162,7 +162,7 @@ export const getPullList = (deck, collection, pulls, binders, availableFor = nul
         cardNumber: copy.cardNumber,
         location: copy.location,
         take,
-        position: getPositionInPage(parseInt(copy.cardNumber, 10), getPockets(copy.binder.gridRows, copy.binder.gridCols)),
+        position: getPositionInPage(parseInt(copy.cardNumber, 10), copy.binder),
       });
     }
     const missing = needed + entry.qty - wanted;

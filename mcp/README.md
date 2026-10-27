@@ -24,6 +24,12 @@ Folio garde tes données dans le navigateur. Pour que le serveur les voie :
 
 Le serveur prend toujours la sauvegarde **la plus récente** du dossier, et relit le fichier à chaque question : après une nouvelle sauvegarde, pas besoin de redémarrer Claude Desktop.
 
+### Sauvegarde automatique
+
+Dans Chrome ou Edge, clique **Sauvegarde auto dans un dossier…** en bas de la barre latérale et choisis le dossier lu par le serveur (`FOLIO_BACKUP`, `~/Downloads` par défaut). Folio y écrit `folio-sauvegarde-auto-AAAA-MM-JJ.json` à chaque changement : Claude voit toujours ta collection à jour, sans clic. Un fichier par jour, les jours précédents restent comme historique.
+
+Après un redémarrage du navigateur, il peut redemander l'autorisation d'écrire dans le dossier : la ligne passe en « en pause », un clic suffit pour reprendre.
+
 `FOLIO_BACKUP` peut pointer :
 
 - vers un **dossier** : la sauvegarde `folio-sauvegarde-*.json` la plus récente est utilisée (par défaut `~/Downloads`) ;

@@ -1,22 +1,25 @@
 import { motion } from 'motion/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { getCardsOnPage, getSpread } from '../../utils/calculations';
+import { getCardsOnPage, getPageSection, getSpread } from '../../utils/calculations';
+import { getInk, getSectionLabel } from '../../utils/catalog';
 
 /**
- * Prev/next buttons plus a clickable mini-map of every page, showing how full each one is.
+ * Prev/next buttons plus a clickable mini-map of every page, showing how full each one is and,
+ * with ink dividers, the ink of each page.
  */
 const PageNavigator = ({ binder, page, totalPages, spreadMode, onNavigate, onStep, canPrev, canNext }) => {
-  const pockets = binder.gridRows * binder.gridCols;
   const activeSpread = getSpread(page);
 
   const pages = Array.from({ length: totalPages }, (_, i) => {
     const p = i + 1;
-    const nums = getCardsOnPage(p, pockets);
+    // Pockets left empty before an ink divider do not count
+    const nums = getCardsOnPage(p, binder).filter(Boolean);
     const filled = nums.filter((n) => binder.cards[String(n)]).length;
     const active = spreadMode ? getSpread(p) === activeSpread : p === page;
     // Visual gap at the start of each spread (2-3, 4-5…) or each sheet (1-2, 3-4…)
     const groupStart = p > 1 && (spreadMode ? p % 2 === 0 : p % 2 === 1);
-    return { p, ratio: filled / pockets, active, groupStart };
+    const section = getPageSection(p, binder);
+    return { p, ratio: nums.length ? filled / nums.length : 0, active, groupStart, section };
   });
 
   // A single cursor, stretched over both pages of the open spread
@@ -30,12 +33,12 @@ const PageNavigator = ({ binder, page, totalPages, spreadMode, onNavigate, onSte
       </button>
 
       <div className="flex-1 min-w-0 overflow-x-auto scrollbar-thin py-1">
-        <div className="flex items-end gap-[3px] justify-center min-w-max mx-auto px-1">
-          {pages.map(({ p, ratio, active, groupStart }) => (
+        <div className="flex items-end gap-[3px] justify-center min-w-max mx-auto px-1 pb-1.5">
+          {pages.map(({ p, ratio, active, groupStart, section }) => (
             <button
               key={p}
               onClick={() => onNavigate(p)}
-              title={`Page ${p} — ${Math.round(ratio * 100)} % remplie`}
+              title={`Page ${p}${section ? ` · ${getSectionLabel(section)}` : ''} — ${Math.round(ratio * 100)} % remplie`}
               aria-label={`Aller à la page ${p}`}
               aria-current={active ? 'page' : undefined}
               className={`group relative w-3.5 h-7 transition-transform hover:-translate-y-0.5 ${groupStart ? 'ml-1' : ''}`}
@@ -48,6 +51,13 @@ const PageNavigator = ({ binder, page, totalPages, spreadMode, onNavigate, onSte
                   transition={{ type: 'spring', stiffness: 200, damping: 24 }}
                 />
               </span>
+              {/* Ink divider: the ink of the page's section under it */}
+              {section && (
+                <span
+                  className="absolute inset-x-0 -bottom-1.5 h-[3px] rounded-full"
+                  style={{ background: section.ink ? getInk(section.ink.split('/')[0]).color : '#64748b' }}
+                />
+              )}
               {/* Cursor glides between pages */}
               {p === firstActive && (
                 <motion.span
