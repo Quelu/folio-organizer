@@ -17,6 +17,7 @@ const DEFAULT_STATE = {
   // Copies of a card several decks share, assigned to one of them: { [cardKey]: { [deckId]: qty } }
   allocations: {},
   // Collections other players shared to trade with them (see utils/tradeShare.js), plus importedAt
+  // and the trade validated with them, if any: { rule, validatedAt, receive, give, found }
   partners: [],
   // Main screen: { kind: 'binder' } shows the active binder, other kinds are the collection-wide views
   view: { kind: 'binder' },
@@ -64,6 +65,13 @@ const withVersion = (deck, label) => ({
     -MAX_VERSIONS
   ),
 });
+
+/** A partner without its validated trade. */
+const withoutTrade = (partner) => {
+  const next = { ...partner };
+  delete next.trade;
+  return next;
+};
 
 export const useBinders = () => {
   const [state, setState] = useState(() => {
@@ -432,8 +440,10 @@ export const useBinders = () => {
   /** Stores a collection another player shared, replacing the previous one of the same player. Returns its id. */
   const savePartner = useCallback((share) => {
     const same = (p) => p.owner.toLowerCase() === share.owner.toLowerCase();
-    const id = stateRef.current.partners.find(same)?.id ?? crypto.randomUUID();
-    const partner = { ...share, id, importedAt: Date.now() };
+    const existing = stateRef.current.partners.find(same);
+    const id = existing?.id ?? crypto.randomUUID();
+    // A newer file of the same player keeps the trade validated with them
+    const partner = { ...share, id, importedAt: Date.now(), ...(existing?.trade && { trade: existing.trade }) };
     setState((prev) => ({
       ...prev,
       partners: prev.partners.some(same) ? prev.partners.map((p) => (same(p) ? partner : p)) : [...prev.partners, partner],
@@ -459,6 +469,53 @@ export const useBinders = () => {
     });
   }, []);
 
+  /** Validates (or with null, drops) the trade with a player. changes merge into the validated trade. */
+  const setPartnerTrade = useCallback((partnerId, trade, merge = false) => {
+    setState((prev) => ({
+      ...prev,
+      partners: prev.partners.map((p) => {
+        if (p.id !== partnerId) return p;
+        if (!trade) return withoutTrade(p);
+        return { ...p, trade: merge ? { ...p.trade, ...trade } : { validatedAt: Date.now(), ...trade } };
+      }),
+    }));
+  }, []);
+
+  /**
+   * Applies a done trade to the binders: removes the given copies, adds the received ones, and
+   * drops the validated trade. Returns what undoes it.
+   * @param {{ remove: { binderId, cardNumber, foil, qty }[], add: { binderId, cardNumber, foil, qty }[] }} moves
+   */
+  const completePartnerTrade = useCallback((partnerId, { remove, add }) => {
+    const prev = stateRef.current;
+    const touched = new Set([...remove, ...add].map((m) => m.binderId));
+    const snapshot = {
+      binders: prev.binders.filter((b) => touched.has(b.id)).map((b) => ({ id: b.id, cards: b.cards })),
+      partner: prev.partners.find((p) => p.id === partnerId) ?? null,
+    };
+    setState((state) => {
+      const binders = state.binders.map((b) => {
+        if (!touched.has(b.id)) return b;
+        let cards = b.cards;
+        for (const m of remove) if (m.binderId === b.id) cards = changeCopies(cards, String(m.cardNumber), -m.qty, m.foil);
+        for (const m of add) if (m.binderId === b.id) cards = changeCopies(cards, String(m.cardNumber), m.qty, m.foil);
+        return { ...b, cards };
+      });
+      const partners = state.partners.map((p) => (p.id === partnerId ? withoutTrade(p) : p));
+      return { ...state, binders, partners };
+    });
+    return snapshot;
+  }, []);
+
+  const undoPartnerTrade = useCallback(({ binders: saved, partner }) => {
+    const cardsOf = new Map(saved.map((b) => [b.id, b.cards]));
+    setState((prev) => ({
+      ...prev,
+      binders: prev.binders.map((b) => (cardsOf.has(b.id) ? { ...b, cards: cardsOf.get(b.id) } : b)),
+      partners: partner ? prev.partners.map((p) => (p.id === partner.id ? partner : p)) : prev.partners,
+    }));
+  }, []);
+
   /** Replaces the whole state with an imported backup. Throws if the file is not a backup. */
   const importState = useCallback((data) => {
     if (!data || !Array.isArray(data.binders)) throw new Error('Fichier de sauvegarde invalide');
@@ -474,6 +531,9 @@ export const useBinders = () => {
     pulls: state.pulls,
     allocations: state.allocations,
     partners: state.partners,
+    setPartnerTrade,
+    completePartnerTrade,
+    undoPartnerTrade,
     view: state.view,
     state,
     createBinder,

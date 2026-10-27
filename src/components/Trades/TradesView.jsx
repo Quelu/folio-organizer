@@ -346,7 +346,7 @@ const TABS = [
 ];
 
 /** Trades with another player from the collection they shared, or a free proposal by value. */
-const TradesView = ({ onOpenSidebar, onShareCollection }) => {
+const TradesView = ({ onOpenSidebar, onShareCollection, onLocate }) => {
   const { view, setView } = useStore();
   const tab = TABS.find((t) => t.key === view.tab) ?? TABS[0];
 
@@ -392,7 +392,7 @@ const TradesView = ({ onOpenSidebar, onShareCollection }) => {
         </nav>
       </header>
 
-      {tab.key === 'partner' ? <PartnerTrade onShare={onShareCollection} /> : <FreeTrade />}
+      {tab.key === 'partner' ? <PartnerTrade onShare={onShareCollection} onLocate={onLocate} /> : <FreeTrade />}
     </div>
   );
 };

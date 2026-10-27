@@ -202,11 +202,33 @@ const toSelection = (units) => {
 
 const priceOf = (unit) => unit.item.price ?? 0;
 
+/** Repeatable random numbers in [0, 1) from a seed (mulberry32): a seed always gives the same proposal. */
+export const seededRandom = (seed) => {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
+const shuffle = (list, random) => {
+  const out = [...list];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+};
+
 /**
  * One for one within each rarity tier. When one side has more copies of a tier, each copy of the
- * other side takes the closest one in price, so the pairs stay even in value too.
+ * other side takes the closest one in price, so the pairs stay even in value too; with random,
+ * one of the three closest, for another proposal.
  */
-const pairByTier = (receive, give) => {
+const pairByTier = (receive, give, random = null) => {
   const tiers = new Map();
   for (const [side, units] of [
     ['receive', receive],
@@ -223,10 +245,9 @@ const pairByTier = (receive, give) => {
     const [fewer, more] = tier.receive.length <= tier.give.length ? ['receive', 'give'] : ['give', 'receive'];
     const pool = [...tier[more]];
     for (const unit of [...tier[fewer]].sort((a, b) => priceOf(b) - priceOf(a))) {
-      let best = 0;
-      for (let i = 1; i < pool.length; i++) {
-        if (Math.abs(priceOf(pool[i]) - priceOf(unit)) < Math.abs(priceOf(pool[best]) - priceOf(unit))) best = i;
-      }
+      const gap = (i) => Math.abs(priceOf(pool[i]) - priceOf(unit));
+      const closest = pool.map((_, i) => i).sort((a, b) => gap(a) - gap(b));
+      const best = random ? closest[Math.floor(random() * Math.min(3, closest.length))] : closest[0];
       picked[fewer].push(unit);
       picked[more].push(pool.splice(best, 1)[0]);
     }
@@ -236,11 +257,13 @@ const pairByTier = (receive, give) => {
 
 /**
  * Units worth about target: the ones that fit, the most valuable first (or the least valuable
- * with ascending, so more cards change hands), then single units added or removed while that
- * brings the total closer.
+ * with ascending, so more cards change hands; in random order with random), then single units
+ * added or removed while that brings the total closer.
  */
-const pickToTarget = (units, target, valueOf, ascending = false) => {
-  const sorted = [...units].sort((a, b) => (ascending ? -1 : 1) * (valueOf(b) - valueOf(a)) || priceOf(a) - priceOf(b));
+const pickToTarget = (units, target, valueOf, ascending = false, random = null) => {
+  const sorted = random
+    ? shuffle(units, random)
+    : [...units].sort((a, b) => (ascending ? -1 : 1) * (valueOf(b) - valueOf(a)) || priceOf(a) - priceOf(b));
   const picked = new Set();
   let sum = 0;
   for (const unit of sorted) {
@@ -269,15 +292,15 @@ const pickToTarget = (units, target, valueOf, ascending = false) => {
 const sumOf = (units, valueOf) => units.reduce((s, u) => s + valueOf(u), 0);
 
 /** Trims the richer side down to the other one until both are even (within tolerance). */
-const balanceSides = (receive, give, valueOf, tolerance, ascending = false) => {
+const balanceSides = (receive, give, valueOf, tolerance, ascending = false, random = null) => {
   let r = receive;
   let g = give;
   for (let round = 0; round < 6; round++) {
     const vr = sumOf(r, valueOf);
     const vg = sumOf(g, valueOf);
     if (Math.abs(vr - vg) <= tolerance(Math.max(vr, vg)) + 1e-9) break;
-    if (vr > vg) r = pickToTarget(r, vg, valueOf, ascending);
-    else g = pickToTarget(g, vr, valueOf, ascending);
+    if (vr > vg) r = pickToTarget(r, vg, valueOf, ascending, random);
+    else g = pickToTarget(g, vr, valueOf, ascending, random);
   }
   return { receive: r, give: g };
 };
@@ -288,23 +311,34 @@ const balanceSides = (receive, give, valueOf, tolerance, ascending = false) => {
  * @param {object[]} receive trade items the other player can give
  * @param {object[]} give trade items the user can give
  * @param {object} scale points of the rarities (see getPointsScale)
+ * @param {number} variant 0 for the rule's best proposal, another number for another proposal
+ *   (the same number always gives the same one)
  * @returns {{ receive: { [itemId]: number }, give: { [itemId]: number } }}
  */
-export const proposeTrade = (rule, receive, give, scale = DEFAULT_TRADE_POINTS) => {
+export const proposeTrade = (rule, receive, give, scale = DEFAULT_TRADE_POINTS, variant = 0) => {
+  const random = variant ? seededRandom(variant) : null;
   let picked;
   if (rule === 'rarity') {
-    picked = pairByTier(toUnits(receive), toUnits(give));
+    picked = pairByTier(toUnits(receive), toUnits(give), random);
   } else if (rule === 'points') {
     // The commonest cards first: many cards completed rather than a few rare ones
     const points = (u) => getTradePoints(u.item.card, u.item.foil, scale);
-    picked = balanceSides(toUnits(receive), toUnits(give), points, () => 0, true);
+    picked = balanceSides(toUnits(receive), toUnits(give), points, () => 0, true, random);
   } else {
     // Copies without a known price cannot weigh in a trade by value
     const priced = (items) => toUnits(items.filter((i) => i.price != null));
-    picked = balanceSides(priced(receive), priced(give), priceOf, (max) => max * VALUE_TOLERANCE);
+    picked = balanceSides(priced(receive), priced(give), priceOf, (max) => max * VALUE_TOLERANCE, false, random);
   }
   return { receive: toSelection(picked.receive), give: toSelection(picked.give) };
 };
+
+const sameSelection = (a, b) => {
+  const ids = new Set([...Object.keys(a), ...Object.keys(b)]);
+  return [...ids].every((id) => (a[id] ?? 0) === (b[id] ?? 0));
+};
+
+/** Whether two proposals pick the same copies. */
+export const sameTrade = (a, b) => sameSelection(a.receive, b.receive) && sameSelection(a.give, b.give);
 
 /**
  * Totals of the chosen copies of one side.
@@ -342,6 +376,27 @@ export const getTradeBalance = (rule, received, given) => {
   }
   const diff = received.value - given.value;
   return { even: Math.abs(diff) <= Math.max(received.value, given.value) * VALUE_TOLERANCE + 1e-9, diff, tiers };
+};
+
+/** What the chosen trade looks like under the rule: even, or which side gets more. */
+export const describeBalance = (rule, balance, partner, format) => {
+  if (rule === 'rarity') {
+    if (balance.even) return 'Équilibré : même rareté des deux côtés';
+    return balance.tiers
+      .slice(0, 3)
+      .map(({ tier, diff }) => {
+        const { label, foil } = getTradeClassLabel(tier);
+        return `${label}${foil ? ' foil' : ''} +${Math.abs(diff)} ${diff > 0 ? 'pour toi' : `pour ${partner}`}`;
+      })
+      .join(' · ');
+  }
+  if (rule === 'points') {
+    if (balance.even) return 'Équilibré en points de rareté';
+    const points = `${formatPoints(Math.abs(balance.diff))} point${Math.abs(balance.diff) > 1 ? 's' : ''}`;
+    return balance.diff > 0 ? `Tu reçois ${points} de plus` : `Tu donnes ${points} de plus`;
+  }
+  if (balance.even) return 'Équilibré à 5 % près';
+  return balance.diff > 0 ? `Tu reçois ${format(balance.diff)} de plus` : `Tu donnes ${format(-balance.diff)} de plus`;
 };
 
 /**
