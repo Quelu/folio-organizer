@@ -157,19 +157,36 @@ const SharedCard = ({ item, deckId, colorOf, onOpenDeck }) => {
   );
 };
 
+/** Shared cards, disputed first then by name: only this deck's when deckId is set, every one otherwise. */
+const useSharedItems = (deckId) => {
+  const cardLang = useCardLang();
+  const { shared } = useCopyAllocation();
+  return shared
+    .filter((s) => !deckId || s.decks.some((d) => d.deck.id === deckId))
+    .sort((a, b) => b.contested - a.contested || cardLang.keyName(a.key).localeCompare(cardLang.keyName(b.key)));
+};
+
+/** The shared cards and their split controls, without the panel header (deck list alerts). */
+export const SharedCardsList = ({ deckId = null, onOpenDeck, className = '' }) => {
+  const colorOf = useDeckColor();
+  const items = useSharedItems(deckId);
+  return (
+    <div data-preview-group className={`grid grid-cols-1 gap-2 xl:grid-cols-2 ${className}`}>
+      {items.map((item) => (
+        <SharedCard key={item.key} item={item} deckId={deckId} colorOf={colorOf} onOpenDeck={onOpenDeck} />
+      ))}
+    </div>
+  );
+};
+
 /**
  * Cards several decks play with fewer copies owned than they need together. Assigning the copies
  * to decks tells each deck what it really lacks (its missing cards, pull list, owned share).
- * deckId: only the cards of this deck (deck page); every shared card otherwise (deck list).
+ * deckId: only the cards of this deck (deck page); every shared card otherwise.
  * defaultOpen: unfolded while copies are disputed unless false (the deck page lists them per card).
  */
 const SharedCardsPanel = ({ deckId = null, defaultOpen = true, onOpenDeck }) => {
-  const cardLang = useCardLang();
-  const colorOf = useDeckColor();
-  const { shared } = useCopyAllocation();
-  const items = shared
-    .filter((s) => !deckId || s.decks.some((d) => d.deck.id === deckId))
-    .sort((a, b) => b.contested - a.contested || cardLang.keyName(a.key).localeCompare(cardLang.keyName(b.key)));
+  const items = useSharedItems(deckId);
   const contested = items.filter((s) => s.contested).length;
   // Open while copies are disputed, until the user folds or unfolds it
   const [openChoice, setOpen] = useState(null);
@@ -217,11 +234,7 @@ const SharedCardsPanel = ({ deckId = null, defaultOpen = true, onOpenDeck }) => 
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.22, ease: 'easeOut' }}
           >
-            <div data-preview-group className="px-3 pb-3 grid gap-2 xl:grid-cols-2">
-              {items.map((item) => (
-                <SharedCard key={item.key} item={item} deckId={deckId} colorOf={colorOf} onOpenDeck={onOpenDeck} />
-              ))}
-            </div>
+            <SharedCardsList deckId={deckId} onOpenDeck={onOpenDeck} className="px-3 pb-3" />
           </motion.div>
         )}
       </AnimatePresence>
