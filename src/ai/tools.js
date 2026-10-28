@@ -115,10 +115,12 @@ export const resolveProposedCards = (input, index) => {
  */
 export const createToolRunner = ({ index, collection, decks, allocations = {}, prices, tradeKeep }) => {
   // Copies the user split between decks: each deck only counts its own and the shared ones
-  const { availableFor, shared } = getCopyAllocation(decks, collection, allocations);
+  const { availableFor, unlockedFor, shared } = getCopyAllocation(decks, collection, allocations);
   const owned = (card) => {
     const entry = collection.entries.get(card.key);
-    return entry ? ` | possédée ×${entry.total}${entry.foil ? ` (${entry.foil} foil)` : ''}` : ' | non possédée';
+    if (!entry) return ' | non possédée';
+    const locked = entry.total - unlockedFor(null, card.key);
+    return ` | possédée ×${entry.total}${entry.foil ? ` (${entry.foil} foil)` : ''}${locked ? `, dont ${locked} verrouillée(s) dans un deck` : ''}`;
   };
   const price = (card) => {
     const value = prices.getPrice(card);
@@ -181,7 +183,7 @@ export const createToolRunner = ({ index, collection, decks, allocations = {}, p
       );
       const disputed = shared.filter((s) => s.contested && s.decks.some((d) => d.deck.id === deck.id));
       return [
-        `${deck.name} (${deck.format}, ${a.total} cartes, encres ${a.inks.join('/') || '—'})`,
+        `${deck.name} (${deck.format}, ${a.total} cartes, encres ${a.inks.join('/') || '—'}${deck.locked ? ', verrouillé' : ''})`,
         deck.notes ? `Notes : ${deck.notes}` : null,
         `Courbe (0…7+) : ${a.curve.join(' ')} · encrables ${a.inkable}/${a.total} · coût moyen ${a.averageCost.toFixed(2)}`,
         ...formatDeckProfile(a.profile),
@@ -219,8 +221,15 @@ export const createToolRunner = ({ index, collection, decks, allocations = {}, p
     propose_deck: (input) => {
       if (typeof input.name !== 'string' || !Array.isArray(input.cards)) throw new Error('name et cards sont obligatoires');
       const { cards, unknown } = resolveProposedCards(input, index);
-      const a = analyzeDeck({ cards, format: input.format === 'infinity' ? 'infinity' : 'core' }, index, collection);
       const replaced = input.replaces_deck_id ? decks.find((d) => d.id === input.replaces_deck_id) : null;
+      // The copies locked in other decks are not there to build with
+      const a = analyzeDeck(
+        { id: replaced?.id ?? null, cards, format: input.format === 'infinity' ? 'infinity' : 'core' },
+        index,
+        collection,
+        'en',
+        unlockedFor
+      );
       return [
         a.valid && unknown.length === 0
           ? 'Deck valide, présenté à l\'utilisateur qui peut l\'enregistrer.'

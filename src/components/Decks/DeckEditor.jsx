@@ -12,6 +12,8 @@ import {
   BookMarked,
   Layers,
   ImageDown,
+  Lock,
+  LockOpen,
   Menu as MenuIcon,
 } from 'lucide-react';
 import Menu from '../ui/Menu';
@@ -34,6 +36,7 @@ import { getInk, getMainType, CARD_TYPES, FORMATS } from '../../utils/catalog';
 import { useCardLang } from '../../hooks/useCardLang';
 import { useCopyAllocation } from '../../hooks/useCopyAllocation';
 import { useDeckColor } from '../../hooks/useDeckColor';
+import { useToast } from '../ui/toastContext';
 import SharedCardsPanel from './SharedCardsPanel';
 
 const TABS = [
@@ -80,7 +83,9 @@ const DeckRow = ({ entry, rotating, share, onChange }) => {
             <span className="truncate">
               {share.contested
                 ? `partagée avec ${others.map((d) => d.deck.name).join(', ')}`
-                : others.map((d) => `${d.assigned} pour ${d.deck.name}`).join(', ')}
+                : others
+                    .map((d) => (d.deck.locked ? `${d.assigned} verrouillée${d.assigned > 1 ? 's' : ''} dans ${d.deck.name}` : `${d.assigned} pour ${d.deck.name}`))
+                    .join(', ')}
             </span>
             {others.map((d) => (
               <span key={d.deck.id} className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: colorOf(d.deck.id) }} />
@@ -109,6 +114,7 @@ const DeckRow = ({ entry, rotating, share, onChange }) => {
 /** A deck's page: card list and picker, missing cards, pull list, hand simulator, versions. */
 const DeckEditor = ({ deck, onBack, onOpenSidebar, onLocate, onDelete }) => {
   const { updateDeck, duplicateDeck, setView } = useStore();
+  const notify = useToast();
   const { index } = useCatalog();
   const collection = useCollection();
   const [tab, setTab] = useState('list');
@@ -126,6 +132,15 @@ const DeckEditor = ({ deck, onBack, onOpenSidebar, onLocate, onDelete }) => {
   const rotatingKeys = new Set(analysis.rotating.map((e) => e.key));
 
   const setCards = (cards) => updateDeck(deck.id, { cards });
+  const setLocked = (locked) => {
+    updateDeck(deck.id, { locked });
+    notify({
+      message: locked
+        ? 'Cartes verrouillées : elles ne servent plus qu’à ce deck, ni aux autres decks ni aux échanges'
+        : 'Cartes déverrouillées : elles reviennent en commun avec tes autres decks',
+      action: { label: 'Annuler', onClick: () => updateDeck(deck.id, { locked: !locked }) },
+    });
+  };
   const groups = CARD_TYPES.map((t) => ({
     ...t,
     entries: analysis.entries
@@ -153,6 +168,14 @@ const DeckEditor = ({ deck, onBack, onOpenSidebar, onLocate, onDelete }) => {
                 {deck.kind === 'reference' && (
                   <span className="px-2 py-0.5 rounded-md font-semibold bg-amber-500/15 text-amber-300 ring-1 ring-inset ring-amber-400/25">
                     Référence
+                  </span>
+                )}
+                {deck.locked && (
+                  <span
+                    className="flex items-center gap-1 px-2 py-0.5 rounded-md font-semibold bg-sky-500/15 text-sky-300 ring-1 ring-inset ring-sky-400/25"
+                    title="Ses cartes lui sont réservées : aucun autre deck ne les utilise et elles ne sont jamais proposées en échange"
+                  >
+                    <Lock size={11} /> Verrouillé
                   </span>
                 )}
                 {analysis.inks.map((ink) => (
@@ -188,8 +211,16 @@ const DeckEditor = ({ deck, onBack, onOpenSidebar, onLocate, onDelete }) => {
                 {
                   label: deck.kind === 'reference' ? 'Passer dans mes decks' : 'Passer en référence',
                   icon: deck.kind === 'reference' ? Layers : BookMarked,
-                  onClick: () => updateDeck(deck.id, { kind: deck.kind === 'reference' ? 'mine' : 'reference' }),
+                  // A reference deck takes no copies from the collection: nothing left to lock
+                  onClick: () => updateDeck(deck.id, { kind: deck.kind === 'reference' ? 'mine' : 'reference', locked: false }),
                 },
+                deck.kind !== 'reference'
+                  ? {
+                      label: deck.locked ? 'Déverrouiller ses cartes' : 'Verrouiller ses cartes',
+                      icon: deck.locked ? LockOpen : Lock,
+                      onClick: () => setLocked(!deck.locked),
+                    }
+                  : null,
                 {
                   label: 'Exporter en image',
                   icon: ImageDown,

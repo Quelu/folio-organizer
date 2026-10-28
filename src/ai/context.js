@@ -1,5 +1,6 @@
 import { formatCardLine, getInk } from '../utils/catalog';
 import { formatDeckList } from '../utils/deckRules';
+import { getCopyAllocation } from '../utils/collection';
 
 const INSTRUCTIONS = `Tu es l'assistant de Folio, une application pour ranger sa collection de cartes Disney Lorcana dans des fardes (classeurs) et construire des decks.
 
@@ -18,6 +19,7 @@ Principes de construction :
 - S'inspirer des decks de référence fournis (decks qui gagnent) : reprendre leurs ratios, leurs paires d'encres et leurs moteurs, puis adapter à la collection.
 
 Données : la collection sélectionnée et les decks de référence sont plus bas. Chaque carte a un identifiant [chapitre-numéro]. Les quantités « ×N » sont les exemplaires possédés (toutes fardes et éditions confondues).
+Un deck verrouillé (un deck préconstruit gardé tel quel, par exemple) garde ses exemplaires pour lui : ne les compte pas pour construire ou améliorer un autre deck, et ne les propose jamais en échange.
 Outils : search_cards pour chercher dans tout le catalogue (y compris les cartes non possédées), get_cards pour le détail (emplacements dans les fardes, prix, légalité), get_deck pour lire un deck de l'utilisateur, suggest_trades pour des échanges à valeur égale, propose_deck pour proposer un deck complet.
 
 Consignes de réponse :
@@ -27,14 +29,18 @@ Consignes de réponse :
 - Par défaut, construis avec les cartes possédées ; si des cartes manquent, dis lesquelles et pourquoi elles valent l'achat ou l'échange.
 - Sois honnête sur les limites : si la collection ne permet pas un deck compétitif, dis-le et propose la meilleure option.`;
 
-/** Owned cards, one compact line each, grouped by ink then cost. */
-const formatCollection = (collection) => {
+/** Owned cards, one compact line each, grouped by ink then cost, with the copies locked in a deck. */
+const formatCollection = (collection, decks) => {
+  const { unlockedFor } = getCopyAllocation(decks, collection);
   const entries = [...collection.entries.values()].sort(
     (a, b) =>
       a.card.inks.join().localeCompare(b.card.inks.join()) || a.card.cost - b.card.cost || a.card.fullName.localeCompare(b.card.fullName)
   );
   return entries
-    .map((e) => `${formatCardLine(e.card)} | ×${e.total}${e.foil ? ` (${e.foil} foil)` : ''}`)
+    .map((e) => {
+      const locked = e.total - unlockedFor(null, e.key);
+      return `${formatCardLine(e.card)} | ×${e.total}${e.foil ? ` (${e.foil} foil)` : ''}${locked ? `, dont ${locked} verrouillée(s)` : ''}`;
+    })
     .join('\n');
 };
 
@@ -68,9 +74,11 @@ export const buildSystemPrompt = ({ binders, collection, decks, index, includeRe
       Object.entries(inkTotals)
         .map(([ink, n]) => `${getInk(ink).label} ${n}`)
         .join(', ') || '—'
-    }\n${formatCollection(collection)}`,
+    }\n${formatCollection(collection, myDecks)}`,
     `## Decks de l'utilisateur\n${
-      myDecks.map((d) => `- id ${d.id} : ${d.name} (${d.cards.reduce((s, c) => s + c.qty, 0)} cartes, ${d.format})`).join('\n') ||
+      myDecks
+        .map((d) => `- id ${d.id} : ${d.name} (${d.cards.reduce((s, c) => s + c.qty, 0)} cartes, ${d.format}${d.locked ? ', verrouillé' : ''})`)
+        .join('\n') ||
       '- aucun'
     }`,
     references.length

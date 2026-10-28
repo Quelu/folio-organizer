@@ -315,6 +315,7 @@ export const useBinders = () => {
       notes: data.notes ?? '',
       source: data.source ?? 'manual',
       sourceUrl: data.sourceUrl ?? '',
+      locked: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
       versions: [],
@@ -390,6 +391,8 @@ export const useBinders = () => {
       id: crypto.randomUUID(),
       name: `${source.name} (copie)`,
       kind: 'mine',
+      // A copy to try changes on borrows the cards, it does not lock more copies
+      locked: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
       versions: [],

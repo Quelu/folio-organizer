@@ -295,6 +295,7 @@ const server = new McpServer(
     instructions:
       "Collection de cartes Disney Lorcana de l'utilisateur, rangée dans des fardes (classeurs) Folio, et ses decks. " +
       'Les cartes sont citées [chapitre-numéro] Nom - Version. Un deck : 60 cartes minimum, 4 copies max par nom complet, 2 encres max. ' +
+      'Un deck verrouillé garde ses exemplaires pour lui : ils ne servent ni aux autres decks ni aux échanges. ' +
       "Les données viennent de la dernière sauvegarde Folio (bouton « Sauvegarder ») : si elles semblent dépassées, propose à l'utilisateur d'en refaire une.",
   }
 );
@@ -425,7 +426,7 @@ tool(
     if (!card) throw new Error(`Carte introuvable (${id ?? name ?? 'aucun identifiant'}).`);
 
     const printings = index.byKey.get(card.key) ?? [card];
-    const usage = (getDeckUsage(decks).get(card.key) ?? []).map((u) => `« ${u.deck.name} » ×${u.qty}`);
+    const usage = (getDeckUsage(decks).get(card.key) ?? []).map((u) => `« ${u.deck.name} » ×${u.qty}${u.deck.locked ? ' (verrouillé)' : ''}`);
     return [
       formatCardLine(card),
       `Encre${card.inks.length > 1 ? 's' : ''} : ${card.inks.map(inkLabel).join(' / ')} · ${card.inkwell ? 'encrable' : 'non encrable'} · rareté ${rarityLabel(card.rarity)}`,
@@ -556,7 +557,7 @@ tool(
     return decks
       .map((deck) => {
         const a = analyzeDeck(deck, index, collection, 'fr', allocation.availableFor);
-        return `- « ${deck.name} » (id ${deck.id}) · ${deck.kind === 'reference' ? 'référence' : 'mon deck'} · ${deck.format === 'infinity' ? 'Infinity' : 'Core'} · ${a.total} cartes · ${a.inks.map(inkLabel).join(' / ') || '—'} · ${a.valid ? 'valide' : `${a.errors.length} erreur(s)`} · possédé ${pct(a.ownedRatio)}`;
+        return `- « ${deck.name} » (id ${deck.id}) · ${deck.kind === 'reference' ? 'référence' : 'mon deck'}${deck.locked ? ' verrouillé' : ''} · ${deck.format === 'infinity' ? 'Infinity' : 'Core'} · ${a.total} cartes · ${a.inks.map(inkLabel).join(' / ') || '—'} · ${a.valid ? 'valide' : `${a.errors.length} erreur(s)`} · possédé ${pct(a.ownedRatio)}`;
       })
       .join('\n');
   }
@@ -578,7 +579,7 @@ tool(
       (collection.entries.get(key)?.copies ?? []).reduce((s, c) => s + getPulledCount(pulls, c.binder.id, c.cardNumber, deck.id), 0);
     const shared = allocation.shared.filter((c) => c.decks.some((u) => u.deck.id === deck.id));
     return [
-      `« ${deck.name} » · ${deck.kind === 'reference' ? 'deck de référence' : 'mon deck'} · format ${deck.format === 'infinity' ? 'Infinity' : 'Core'}${deck.sourceUrl ? ` · source ${deck.sourceUrl}` : ''}`,
+      `« ${deck.name} » · ${deck.kind === 'reference' ? 'deck de référence' : 'mon deck'}${deck.locked ? ' verrouillé (ses exemplaires lui sont réservés)' : ''} · format ${deck.format === 'infinity' ? 'Infinity' : 'Core'}${deck.sourceUrl ? ` · source ${deck.sourceUrl}` : ''}`,
       formatAnalysisHeader(a),
       `Possédé : ${a.owned}/${a.total} exemplaires (${pct(a.ownedRatio)})`,
       'Cartes :',
@@ -619,17 +620,18 @@ tool(
     annotations: { readOnlyHint: true },
   },
   async ({ list, format = 'core' }) => {
-    const { index, collection } = await getContext();
+    const { index, collection, allocation } = await getContext();
     const { cards, unresolved } = parseDeckList(list, index);
     if (!cards.length) throw new Error('Aucune carte reconnue dans la liste.');
-    const a = analyzeDeck({ id: 'pasted', name: 'Liste collée', kind: 'reference', format, cards }, index, collection);
+    // The copies locked in a deck are not there to build another one
+    const a = analyzeDeck({ id: 'pasted', name: 'Liste collée', kind: 'reference', format, cards }, index, collection, 'en', allocation.unlockedFor);
     let cost = 0;
     let unpriced = 0;
     const missing = a.missing.sort(byCost).map((e) => {
       const card = getMainPrinting(index, e.key) ?? e.card;
       if (card?.usd != null) cost += card.usd * e.missing;
       else unpriced++;
-      return `  ${e.missing} × ${card ? cite(card) : e.name}${card?.usd != null ? ` (~${card.usd} $ pièce)` : ''}`;
+      return `  ${e.missing} × ${card ? cite(card) : e.name}${card?.usd != null ? ` (~${card.usd} $ pièce)` : ''}${e.reserved ? ` (+${e.reserved} possédée(s) mais verrouillée(s) dans un deck)` : ''}`;
     });
     return [
       `Possédé : ${a.owned}/${a.total} exemplaires (${pct(a.ownedRatio)}).`,

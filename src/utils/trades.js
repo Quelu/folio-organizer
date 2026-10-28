@@ -39,11 +39,26 @@ const reserve = (pocket, n) => {
 };
 
 /**
+ * Copies of a card kept out of trades:
+ * - keep 1 (collection): 1 + the copies the user's decks play, the decks come on top of the binder copy;
+ * - keep 4 (playset): max(4, the copies the decks play), since the decks play with the playset;
+ * plus, either way, the copies of the locked decks, which never join the collection's copies.
+ * @param {{ deck, qty }[]} uses the card's line of getDeckUsage
+ */
+export const getKeptCopies = (uses, keep) => {
+  let locked = 0;
+  let used = 0;
+  for (const { deck, qty } of uses) {
+    if (deck.locked) locked += qty;
+    else used += qty;
+  }
+  return locked + (keep >= MAX_COPIES ? Math.max(keep, used) : keep + used);
+};
+
+/**
  * Copies the user can trade away, one item per printing and variant.
  *
- * Copies reserved per card (full name), the rest is tradeable (never negative):
- * - keep 1 (collection): 1 + the copies the user's decks play, the decks come on top of the binder copy;
- * - keep 4 (playset): max(4, the copies the decks play), since the decks play with the playset.
+ * Copies kept per card (full name, see getKeptCopies), the rest is tradeable (never negative).
  * The same rule drives the surplus of the collection stats. Reserved copies are taken from the
  * cheapest printings first, so the valuable extras stay tradeable, and foils first within a pocket:
  * a collection keeps its shiny copies, normals are traded first.
@@ -58,12 +73,11 @@ export const getTradeableSurplus = (collection, decks, keep, getPrice) => {
   const usage = getDeckUsage(decks);
   const items = new Map();
   for (const entry of collection.entries.values()) {
-    const used = (usage.get(entry.key) ?? []).reduce((s, u) => s + u.qty, 0);
     const pockets = entry.copies
       .map((c) => ({ card: c.card, normal: c.normal, foil: c.foil }))
       .sort((a, b) => (getPrice(a.card, false) ?? 0) - (getPrice(b.card, false) ?? 0));
 
-    let rest = keep >= MAX_COPIES ? Math.max(keep, used) : keep + used;
+    let rest = getKeptCopies(usage.get(entry.key) ?? [], keep);
     for (const pocket of pockets) rest -= reserve(pocket, rest);
 
     for (const pocket of pockets) {

@@ -12,9 +12,11 @@ import { getDeckProfile, keywordLabel } from './deckProfile.js';
 
 /**
  * A deck is { id, name, kind: 'mine'|'reference', format: 'core'|'infinity', cards, notes, source,
- * sourceUrl, createdAt, updatedAt, versions }.
+ * sourceUrl, locked, createdAt, updatedAt, versions }.
  * cards: [{ key, id, name, qty }] — key is the normalized full name, id the printing shown
  * (and fetched first in the binders), name the full name for display.
+ * locked: its copies belong to it alone (a starter deck kept whole): no other deck can use them
+ * and they are never traded (see getCopyAllocation, getKeptCopies).
  * versions: [{ id, at, label, cards }] snapshots, newest last.
  */
 

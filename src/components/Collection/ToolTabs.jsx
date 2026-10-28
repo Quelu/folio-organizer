@@ -11,6 +11,7 @@ import { INKS, getMainPrinting } from '../../utils/catalog';
 import { LORCANA_RARITIES, getLorcanaSetName } from '../../data/games';
 import { getPocketPrintings, getPlaysetCards, matchesCard } from '../../utils/collectionFilters';
 import { getDeckWantsLines } from '../../utils/cardmarketExport';
+import { getKeptCopies } from '../../utils/trades';
 
 const PLAYSET = 4;
 
@@ -178,7 +179,10 @@ export const PlaysetsTab = ({ ctx }) => {
   );
 };
 
-/** Copies beyond what is kept: one in the binder plus the decks' copies, or a playset that covers the decks. */
+/**
+ * Copies beyond what is kept: one in the binder plus the decks' copies, or a playset that covers
+ * the decks, and the locked decks' copies on top (see getKeptCopies).
+ */
 export const DoublesTab = ({ ctx }) => {
   const { prefs, setPref } = useStore();
   const cardLang = useCardLang();
@@ -197,9 +201,9 @@ export const DoublesTab = ({ ctx }) => {
           (!filters.foil || e.foil > 0)
       )
       .map((e) => {
-        const used = (usage.get(e.key) ?? []).reduce((s, u) => s + u.qty, 0);
-        const reserved = keep >= PLAYSET ? Math.max(keep, used) : keep + used;
-        return { ...e, used, surplus: e.total - reserved };
+        const uses = usage.get(e.key) ?? [];
+        const used = uses.reduce((s, u) => s + u.qty, 0);
+        return { ...e, used, surplus: e.total - getKeptCopies(uses, keep) };
       })
       .filter((e) => e.surplus > 0)
       .sort((a, b) => b.surplus - a.surplus || cardLang.fullName(a.card).localeCompare(cardLang.fullName(b.card)));

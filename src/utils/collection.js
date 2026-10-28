@@ -75,12 +75,16 @@ export const getDeckUsage = (decks) => {
  * capped by what the deck plays and by the copies owned (decks in list order). Unassigned copies
  * stay shared: every deck playing the card counts them. So a deck can use its assigned copies
  * plus the shared ones: owned minus the copies assigned to the other decks.
+ * A locked deck (a sealed starter deck, say) is assigned every copy it plays, before the user's
+ * split: its copies are never available to another deck.
  *
  * @returns {{
  *   availableFor: (deckId: string|null, key: string) => number,
+ *   unlockedFor: (deckId: string|null, key: string) => number,
  *   shared: { key, name, owned, needed, free, contested, decks: { deck, qty, assigned, available, missing }[] }[]
- * }} shared: cards several decks play with fewer copies owned than they need together;
- *   contested while shared copies are still disputed (the user has not split them yet)
+ * }} unlockedFor: owned minus the copies locked in the other decks, for a list outside the split
+ *   (a pasted or proposed deck); shared: cards several decks play with fewer copies owned than they
+ *   need together; contested while shared copies are still disputed (the user has not split them yet)
  */
 export const getCopyAllocation = (decks, collection, allocations = {}) => {
   const assigned = new Map();
@@ -89,8 +93,9 @@ export const getCopyAllocation = (decks, collection, allocations = {}) => {
     const owned = getOwned(collection, key);
     let free = owned;
     const byDeck = new Map();
-    for (const { deck, qty } of uses) {
-      const copies = Math.max(0, Math.min(allocations[key]?.[deck.id] ?? 0, qty, free));
+    for (const { deck, qty } of [...uses].sort((a, b) => Boolean(b.deck.locked) - Boolean(a.deck.locked))) {
+      const wanted = deck.locked ? qty : (allocations[key]?.[deck.id] ?? 0);
+      const copies = Math.max(0, Math.min(wanted, qty, free));
       if (copies) byDeck.set(deck.id, copies);
       free -= copies;
     }
@@ -113,12 +118,15 @@ export const getCopyAllocation = (decks, collection, allocations = {}) => {
     });
   }
 
-  const availableFor = (deckId, key) => {
+  const locked = new Set(decks.filter((d) => d.locked).map((d) => d.id));
+  const assignedElsewhere = (deckId, key, lockedOnly) => {
     let others = 0;
-    for (const [id, copies] of assigned.get(key) ?? []) if (id !== deckId) others += copies;
-    return getOwned(collection, key) - others;
+    for (const [id, copies] of assigned.get(key) ?? []) if (id !== deckId && (!lockedOnly || locked.has(id))) others += copies;
+    return others;
   };
-  return { availableFor, shared };
+  const availableFor = (deckId, key) => getOwned(collection, key) - assignedElsewhere(deckId, key, false);
+  const unlockedFor = (deckId, key) => getOwned(collection, key) - assignedElsewhere(deckId, key, true);
+  return { availableFor, unlockedFor, shared };
 };
 
 /** Cards several decks still dispute: fewer copies owned than needed, not split by the user yet. */

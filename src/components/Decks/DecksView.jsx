@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, ClipboardPaste, AlertTriangle, AlertCircle, CheckCircle2, Layers, BookMarked, Menu as MenuIcon, Loader2, Split, ChevronRight } from 'lucide-react';
+import { Plus, ClipboardPaste, AlertTriangle, AlertCircle, CheckCircle2, Layers, BookMarked, Menu as MenuIcon, Loader2, Split, ChevronRight, Lock } from 'lucide-react';
 import ProgressBar from '../ui/ProgressBar';
 import ConfirmDialog from '../ui/ConfirmDialog';
 import DeckEditor from './DeckEditor';
@@ -29,16 +29,21 @@ const DeckTile = ({ deck, analysis, contested, onOpen }) => (
       {analysis.inks.map((ink) => (
         <span key={ink} className="w-3 h-3 rounded-full ring-2 ring-slate-950" style={{ background: getInk(ink).color }} title={getInk(ink).label} />
       ))}
-      {contested > 0 && (
-        <span
-          className="ml-auto flex items-center gap-1 px-1.5 py-px rounded-full text-[10px] font-bold bg-amber-400/15 text-amber-300 ring-1 ring-inset ring-amber-400/30"
-          title="Cartes partagées avec un autre deck, à répartir"
-        >
-          <Split size={10} /> {contested}
-        </span>
-      )}
-      <span className={`${contested > 0 ? '' : 'ml-auto '}text-[10px] uppercase tracking-wider text-slate-500`}>
-        {deck.format === 'core' ? 'Core' : 'Infinity'}
+      <span className="ml-auto flex items-center gap-1.5">
+        {contested > 0 && (
+          <span
+            className="flex items-center gap-1 px-1.5 py-px rounded-full text-[10px] font-bold bg-amber-400/15 text-amber-300 ring-1 ring-inset ring-amber-400/30"
+            title="Cartes partagées avec un autre deck, à répartir"
+          >
+            <Split size={10} /> {contested}
+          </span>
+        )}
+        {deck.locked && (
+          <span title="Deck verrouillé : ses cartes lui sont réservées">
+            <Lock size={11} className="text-sky-300" aria-label="Verrouillé" />
+          </span>
+        )}
+        <span className="text-[10px] uppercase tracking-wider text-slate-500">{deck.format === 'core' ? 'Core' : 'Infinity'}</span>
       </span>
     </div>
     <div className="font-semibold text-white truncate">{deck.name}</div>

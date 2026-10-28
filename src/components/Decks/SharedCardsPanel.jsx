@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Split, ChevronDown, Minus, Plus, Crown, RotateCcw, Check, AlertTriangle } from 'lucide-react';
+import { Split, ChevronDown, Minus, Plus, Crown, RotateCcw, Check, AlertTriangle, Lock } from 'lucide-react';
 import CardThumb from '../ui/CardThumb';
 import { useStore } from '../../hooks/storeContext';
 import { useCatalog } from '../../hooks/catalogContext';
@@ -41,13 +41,14 @@ const SharedCard = ({ item, deckId, colorOf, onOpenDeck }) => {
   const { index } = useCatalog();
   const cardLang = useCardLang();
   const card = index ? getMainPrinting(index, item.key) : null;
-  const anyAssigned = item.decks.some((d) => d.assigned > 0);
+  // Locked decks keep their copies whatever the split (see getCopyAllocation)
+  const anyAssigned = item.decks.some((d) => d.assigned > 0 && !d.deck.locked);
 
-  /** All the copies it plays go to this deck, the others keep what is left. */
+  /** All the copies it plays go to this deck once the locked decks are served, the others keep what is left. */
   const prioritize = (target) => {
-    let left = item.owned;
+    let left = item.owned - item.decks.filter((d) => d.deck.locked).reduce((s, d) => s + d.assigned, 0);
     const split = {};
-    for (const d of [target, ...item.decks.filter((x) => x.deck.id !== target.deck.id)]) {
+    for (const d of [target, ...item.decks.filter((x) => x.deck.id !== target.deck.id && !x.deck.locked)]) {
       const copies = d === target ? Math.min(d.qty, left) : Math.min(d.assigned, left);
       split[d.deck.id] = copies;
       left -= copies;
@@ -108,33 +109,44 @@ const SharedCard = ({ item, deckId, colorOf, onOpenDeck }) => {
                 {d.deck.name}
                 <span className="text-slate-500 font-normal"> · en joue {d.qty}</span>
               </button>
-              <div className="flex items-center rounded-md ring-1 ring-inset ring-white/10 bg-slate-950/50" title="Exemplaires réservés pour ce deck">
-                <button
-                  onClick={() => setAllocation(item.key, { [d.deck.id]: d.assigned - 1 })}
-                  disabled={d.assigned === 0}
-                  className="btn-icon p-1"
-                  aria-label={`Une réservation de moins pour ${d.deck.name}`}
+              {d.deck.locked ? (
+                <span
+                  className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold text-sky-300 bg-sky-500/10 ring-1 ring-inset ring-sky-400/20"
+                  title="Deck verrouillé : il garde tous les exemplaires qu’il joue"
                 >
-                  <Minus size={12} />
-                </button>
-                <span className="w-5 text-center text-xs font-bold text-white tabular-nums">{d.assigned}</span>
-                <button
-                  onClick={() => setAllocation(item.key, { [d.deck.id]: d.assigned + 1 })}
-                  disabled={d.assigned >= d.qty || item.free === 0}
-                  className="btn-icon p-1"
-                  aria-label={`Réserver un exemplaire de plus pour ${d.deck.name}`}
-                >
-                  <Plus size={12} />
-                </button>
-              </div>
-              <button
-                onClick={() => prioritize(d)}
-                className="btn-icon p-1.5 text-amber-300/70 hover:text-amber-200"
-                title="Priorité : lui réserver tous les exemplaires dont il a besoin"
-                aria-label={`Priorité à ${d.deck.name}`}
-              >
-                <Crown size={13} />
-              </button>
+                  <Lock size={11} /> {d.assigned}
+                </span>
+              ) : (
+                <>
+                  <div className="flex items-center rounded-md ring-1 ring-inset ring-white/10 bg-slate-950/50" title="Exemplaires réservés pour ce deck">
+                    <button
+                      onClick={() => setAllocation(item.key, { [d.deck.id]: d.assigned - 1 })}
+                      disabled={d.assigned === 0}
+                      className="btn-icon p-1"
+                      aria-label={`Une réservation de moins pour ${d.deck.name}`}
+                    >
+                      <Minus size={12} />
+                    </button>
+                    <span className="w-5 text-center text-xs font-bold text-white tabular-nums">{d.assigned}</span>
+                    <button
+                      onClick={() => setAllocation(item.key, { [d.deck.id]: d.assigned + 1 })}
+                      disabled={d.assigned >= d.qty || item.free === 0}
+                      className="btn-icon p-1"
+                      aria-label={`Réserver un exemplaire de plus pour ${d.deck.name}`}
+                    >
+                      <Plus size={12} />
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => prioritize(d)}
+                    className="btn-icon p-1.5 text-amber-300/70 hover:text-amber-200"
+                    title="Priorité : lui réserver tous les exemplaires dont il a besoin"
+                    aria-label={`Priorité à ${d.deck.name}`}
+                  >
+                    <Crown size={13} />
+                  </button>
+                </>
+              )}
               <span
                 className={`w-[4.5rem] text-right text-[11px] font-semibold tabular-nums ${d.missing ? 'text-rose-300' : 'text-emerald-300'}`}
               >
