@@ -17,7 +17,15 @@ const toForm = (binder) =>
         gridRows: binder.gridRows,
         inkDividers: Boolean(binder.sections?.length),
       }
-    : { name: '', gameType: 'lorcana', setCode: null, setSize: 204, gridCols: 3, gridRows: 3, inkDividers: false };
+    : // name: null follows the chosen set (see suggestedName) until the user types one
+      { name: null, gameType: 'lorcana', setCode: null, setSize: 204, gridCols: 3, gridRows: 3, inkDividers: false };
+
+/** Name given to a Lorcana binder by default, e.g. « 14 - Hyperia City ». */
+const suggestedName = (gameType, setCode) => {
+  if (gameType !== 'lorcana') return '';
+  const setName = getLorcanaSetName(setCode);
+  return setName ? `${setCode} - ${setName}` : `Set ${setCode}`;
+};
 
 /** Mini grid preview used on the grid preset tiles. */
 const GridGlyph = ({ cols, rows, active }) => (
@@ -37,24 +45,29 @@ const FormBody = ({ binder, onClose, onSubmit }) => {
   const { index } = useCatalog();
   const isEdit = Boolean(binder);
   const isLorcana = form.gameType === 'lorcana';
+  const lorcanaSet = form.setCode ?? lorcanaSets[lorcanaSets.length - 1].code;
+  const suggested = suggestedName(form.gameType, lorcanaSet);
+  const name = form.name ?? suggested;
 
   const update = (patch) => setForm((f) => ({ ...f, ...patch }));
+  // A name left empty or as suggested follows the new game and set
+  const followName = () => (name.trim() === '' || name === suggested ? { name: null } : {});
 
   const selectGame = (gameType) => {
     const wasDefault = form.setSize === '' || form.setSize === getGame(form.gameType).defaultSetSize;
-    update({ gameType, ...(wasDefault ? { setSize: getGame(gameType).defaultSetSize ?? '' } : {}) });
+    update({ gameType, ...followName(), ...(wasDefault ? { setSize: getGame(gameType).defaultSetSize ?? '' } : {}) });
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!form.name.trim()) return;
+    if (!name.trim()) return;
     const setSize = parseInt(form.setSize, 10) > 0 ? parseInt(form.setSize, 10) : null;
-    const setCode = isLorcana ? (form.setCode ?? lorcanaSets[lorcanaSets.length - 1].code) : '';
+    const setCode = isLorcana ? lorcanaSet : '';
     // Ink boundaries from the catalog; the saved ones while it loads
     const sections =
       isLorcana && form.inkDividers ? (index ? getInkSections(index, setCode, setSize) : (binder?.sections ?? [])) : [];
     onSubmit({
-      name: form.name,
+      name,
       gameType: form.gameType,
       setCode,
       setSize,
@@ -67,22 +80,6 @@ const FormBody = ({ binder, onClose, onSubmit }) => {
 
   return (
     <form onSubmit={handleSubmit} className="px-6 pb-6 pt-3 space-y-5">
-      <div>
-        <label className="label" htmlFor="binder-name">
-          Nom
-        </label>
-        <input
-          id="binder-name"
-          type="text"
-          value={form.name}
-          onChange={(e) => update({ name: e.target.value })}
-          placeholder="Ex : Lorcana — Chapitre 1"
-          autoFocus
-          required
-          className="field"
-        />
-      </div>
-
       <div>
         <span className="label">Jeu</span>
         <div className="grid grid-cols-2 gap-2">
@@ -118,8 +115,8 @@ const FormBody = ({ binder, onClose, onSubmit }) => {
             </label>
             <select
               id="binder-set"
-              value={form.setCode ?? lorcanaSets[lorcanaSets.length - 1].code}
-              onChange={(e) => update({ setCode: e.target.value })}
+              value={lorcanaSet}
+              onChange={(e) => update({ setCode: e.target.value, ...followName() })}
               className="field"
             >
               {[...lorcanaSets].reverse().map((s) => {
@@ -135,6 +132,22 @@ const FormBody = ({ binder, onClose, onSubmit }) => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <div>
+        <label className="label" htmlFor="binder-name">
+          Nom
+        </label>
+        <input
+          id="binder-name"
+          type="text"
+          value={name}
+          onChange={(e) => update({ name: e.target.value })}
+          placeholder={suggested || 'Ex : Ma farde Pokémon'}
+          autoFocus
+          required
+          className="field"
+        />
+      </div>
 
       <div>
         <span className="label">Grille des pages</span>
