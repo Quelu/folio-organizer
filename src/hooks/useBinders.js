@@ -164,6 +164,15 @@ export const useBinders = () => {
     });
   }, []);
 
+  /** Puts the binders in the given order of ids; binders left out of it keep their place at the end. */
+  const reorderBinders = useCallback((binderIds) => {
+    setState((prev) => {
+      const byId = new Map(prev.binders.map((b) => [b.id, b]));
+      const ordered = binderIds.map((id) => byId.get(id)).filter(Boolean);
+      return { ...prev, binders: [...ordered, ...prev.binders.filter((b) => !binderIds.includes(b.id))] };
+    });
+  }, []);
+
   const setActiveBinder = useCallback((binderId) => {
     setState((prev) => ({ ...prev, activeBinderId: binderId, view: { kind: 'binder' } }));
   }, []);
@@ -481,6 +490,7 @@ export const useBinders = () => {
     deleteBinder,
     restoreBinder,
     duplicateBinder,
+    reorderBinders,
     setActiveBinder,
     addCards,
     setCardCounts,

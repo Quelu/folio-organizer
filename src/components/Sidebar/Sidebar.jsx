@@ -15,7 +15,7 @@ import {
   FolderOpen,
   AlertTriangle,
 } from 'lucide-react';
-import { motion, AnimatePresence, LayoutGroup } from 'motion/react';
+import { motion, AnimatePresence, LayoutGroup, Reorder, useDragControls } from 'motion/react';
 import BinderItem from './BinderItem';
 import CatalogStatus from './CatalogStatus';
 
@@ -93,6 +93,32 @@ const NavItem = ({ item, isActive, badge, onClick }) => (
   </button>
 );
 
+/** A binder of the list, dragged into place by its grip; onDrop saves the new order. */
+const SortableBinder = ({ binder, canDrag, onDrop, ...itemProps }) => {
+  const controls = useDragControls();
+  const [dragging, setDragging] = useState(false);
+  return (
+    <Reorder.Item
+      value={binder.id}
+      dragListener={false}
+      dragControls={controls}
+      onDragStart={() => setDragging(true)}
+      onDragEnd={() => {
+        setDragging(false);
+        onDrop();
+      }}
+      whileDrag={{ scale: 1.02 }}
+      className={`rounded-xl ${dragging ? 'bg-slate-900 shadow-xl shadow-black/40 ring-1 ring-inset ring-white/10' : ''}`}
+      initial={{ opacity: 0, x: -16, scale: 0.96 }}
+      animate={{ opacity: 1, x: 0, scale: 1 }}
+      exit={{ opacity: 0, x: -24, scale: 0.94, transition: { duration: 0.18 } }}
+      transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+    >
+      <BinderItem binder={binder} onDragStart={canDrag ? (e) => controls.start(e) : null} {...itemProps} />
+    </Reorder.Item>
+  );
+};
+
 const SidebarContent = ({
   binders,
   view,
@@ -106,6 +132,7 @@ const SidebarContent = ({
   onCreateNew,
   onEdit,
   onDuplicate,
+  onReorder,
   onDelete,
   onShare,
   onExportBackup,
@@ -116,9 +143,32 @@ const SidebarContent = ({
 }) => {
   const [query, setQuery] = useState('');
   const fileRef = useRef(null);
+  // Ids in their new order while a binder is dragged, saved once it is dropped
+  const [draft, setDraft] = useState(null);
+  const draftRef = useRef(null);
   const filtered = query
     ? binders.filter((b) => b.name.toLowerCase().includes(query.toLowerCase()))
     : binders;
+  // The order of a search result says nothing about where the others go
+  const canReorder = !query && binders.length > 1;
+  const byId = new Map(binders.map((b) => [b.id, b]));
+  const order = draft ?? filtered.map((b) => b.id);
+
+  const changeDraft = (ids) => {
+    draftRef.current = ids;
+    setDraft(ids);
+  };
+  const saveDraft = () => {
+    if (draftRef.current) onReorder(draftRef.current);
+    draftRef.current = null;
+    setDraft(null);
+  };
+  const moveBy = (binderId, delta) => {
+    const ids = binders.map((b) => b.id);
+    const from = ids.indexOf(binderId);
+    ids.splice(from + delta, 0, ...ids.splice(from, 1));
+    onReorder(ids);
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -182,29 +232,31 @@ const SidebarContent = ({
         Mes fardes {binders.length > 0 && <span className="text-slate-700">· {binders.length}</span>}
       </div>
 
-      <nav className="flex-1 overflow-y-auto scrollbar-thin px-3 pb-3 space-y-1">
-        <AnimatePresence initial={false}>
-          {filtered.map((binder) => (
-            <motion.div
-              key={binder.id}
-              layout
-              initial={{ opacity: 0, x: -16, scale: 0.96 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              exit={{ opacity: 0, x: -24, scale: 0.94, transition: { duration: 0.18 } }}
-              transition={{ type: 'spring', stiffness: 420, damping: 34 }}
-            >
-              <BinderItem
-                binder={binder}
-                isActive={binder.id === activeBinderId}
-                onSelect={() => onSelect(binder.id)}
-                onEdit={() => onEdit(binder)}
-                onDuplicate={() => onDuplicate(binder.id)}
-                onDelete={() => onDelete(binder.id)}
-                onShare={binder.gameType === 'lorcana' && binder.setCode ? () => onShare(binder) : null}
-              />
-            </motion.div>
-          ))}
-        </AnimatePresence>
+      <motion.nav layoutScroll className="flex-1 overflow-y-auto scrollbar-thin px-3 pb-3">
+        <Reorder.Group axis="y" values={order} onReorder={changeDraft} className="space-y-1">
+          <AnimatePresence initial={false}>
+            {order.map((id, i) => {
+              const binder = byId.get(id);
+              if (!binder) return null;
+              return (
+                <SortableBinder
+                  key={id}
+                  binder={binder}
+                  canDrag={canReorder}
+                  onDrop={saveDraft}
+                  isActive={id === activeBinderId}
+                  onSelect={() => onSelect(id)}
+                  onEdit={() => onEdit(binder)}
+                  onDuplicate={() => onDuplicate(id)}
+                  onMoveUp={canReorder && i > 0 ? () => moveBy(id, -1) : null}
+                  onMoveDown={canReorder && i < order.length - 1 ? () => moveBy(id, 1) : null}
+                  onDelete={() => onDelete(id)}
+                  onShare={binder.gameType === 'lorcana' && binder.setCode ? () => onShare(binder) : null}
+                />
+              );
+            })}
+          </AnimatePresence>
+        </Reorder.Group>
         {binders.length === 0 && (
           <p className="text-slate-600 text-sm text-center mt-8 px-4 leading-relaxed">
             Aucune farde pour l'instant.
@@ -213,7 +265,7 @@ const SidebarContent = ({
         {binders.length > 0 && filtered.length === 0 && (
           <p className="text-slate-600 text-sm text-center mt-6">Aucun résultat.</p>
         )}
-      </nav>
+      </motion.nav>
 
       <div className="border-t border-white/5">
         <CatalogStatus />
