@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, ClipboardPaste, AlertTriangle, AlertCircle, CheckCircle2, Layers, BookMarked, Menu as MenuIcon, Loader2, Split, ChevronRight, Lock, Tag, Settings2 } from 'lucide-react';
+import { Plus, ClipboardPaste, AlertTriangle, AlertCircle, CheckCircle2, Layers, BookMarked, Menu as MenuIcon, Loader2, Split, ChevronRight, ChevronDown, CalendarClock, Lock, Tag, Settings2 } from 'lucide-react';
 import ProgressBar from '../ui/ProgressBar';
 import ConfirmDialog from '../ui/ConfirmDialog';
 import DeckEditor from './DeckEditor';
@@ -10,75 +10,128 @@ import { useCatalog } from '../../hooks/catalogContext';
 import { useCardLang } from '../../hooks/useCardLang';
 import { useCollection } from '../../hooks/useCollection';
 import { useToast } from '../ui/toastContext';
-import { analyzeDeck } from '../../utils/deckRules';
+import { analyzeDeck, describeChapters, formatLongDate } from '../../utils/deckRules';
 import { useCopyAllocation } from '../../hooks/useCopyAllocation';
-import SharedCardsPanel from './SharedCardsPanel';
+import { SharedCardsList } from './SharedCardsPanel';
 import { TagChip, DeckTagsModal } from './DeckTags';
 import { getInk } from '../../utils/catalog';
 import { getDeckTags, matchesTags } from '../../utils/deckTags';
 
-const DeckTile = ({ deck, tags, analysis, contested, onOpen }) => (
-  <motion.button
-    layout
-    initial={{ opacity: 0, y: 12 }}
-    animate={{ opacity: 1, y: 0 }}
-    exit={{ opacity: 0, scale: 0.95 }}
-    whileHover={{ y: -3 }}
-    onClick={onOpen}
-    className="text-left rounded-2xl bg-white/[0.03] ring-1 ring-inset ring-white/5 hover:ring-white/15 p-4 transition-colors"
+const plural = (n, word, many = `${word}s`) => `${n} ${n > 1 ? many : word}`;
+
+const TileBadge = ({ icon: Icon, title, children }) => (
+  <span
+    className="flex items-center gap-1 px-1.5 py-px rounded-full text-[10px] font-bold bg-amber-400/15 text-amber-300 ring-1 ring-inset ring-amber-400/30"
+    title={title}
   >
-    <div className="flex items-center gap-1.5 mb-2 h-3">
-      {analysis.inks.map((ink) => (
-        <span key={ink} className="w-3 h-3 rounded-full ring-2 ring-slate-950" style={{ background: getInk(ink).color }} title={getInk(ink).label} />
-      ))}
-      <span className="ml-auto flex items-center gap-1.5">
-        {contested > 0 && (
-          <span
-            className="flex items-center gap-1 px-1.5 py-px rounded-full text-[10px] font-bold bg-amber-400/15 text-amber-300 ring-1 ring-inset ring-amber-400/30"
-            title="Cartes partagées avec un autre deck, à répartir"
-          >
-            <Split size={10} /> {contested}
-          </span>
-        )}
-        {deck.locked && (
-          <span title="Deck verrouillé : ses cartes lui sont réservées">
-            <Lock size={11} className="text-sky-300" aria-label="Verrouillé" />
-          </span>
-        )}
-        <span className="text-[10px] uppercase tracking-wider text-slate-500">{deck.format === 'core' ? 'Core' : 'Infinity'}</span>
-      </span>
-    </div>
-    <div className="font-semibold text-white truncate">{deck.name}</div>
-    {tags.length > 0 && (
-      <div className="flex flex-wrap gap-1 mt-1.5">
-        {tags.map((tag) => (
-          <TagChip key={tag.id} tag={tag} />
+    <Icon size={10} /> {children}
+  </span>
+);
+
+const DeckTile = ({ deck, tags, analysis, contested, onOpen }) => {
+  const rotation = analysis.warnings.find((w) => w.code === 'rotation');
+  return (
+    <motion.button
+      layout
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      whileHover={{ y: -3 }}
+      onClick={onOpen}
+      className="text-left rounded-2xl bg-white/[0.03] ring-1 ring-inset ring-white/5 hover:ring-white/15 p-4 transition-colors"
+    >
+      <div className="flex items-center gap-1.5 mb-2 h-3">
+        {analysis.inks.map((ink) => (
+          <span key={ink} className="w-3 h-3 rounded-full ring-2 ring-slate-950" style={{ background: getInk(ink).color }} title={getInk(ink).label} />
         ))}
+        <span className="ml-auto flex items-center gap-1.5">
+          {rotation && (
+            <TileBadge icon={CalendarClock} title={rotation.message}>
+              {analysis.rotating.length}
+            </TileBadge>
+          )}
+          {contested > 0 && (
+            <TileBadge icon={Split} title="Cartes partagées avec un autre deck, à répartir">
+              {contested}
+            </TileBadge>
+          )}
+          {deck.locked && (
+            <span title="Deck verrouillé : ses cartes lui sont réservées">
+              <Lock size={11} className="text-sky-300" aria-label="Verrouillé" />
+            </span>
+          )}
+          <span className="text-[10px] uppercase tracking-wider text-slate-500">{deck.format === 'core' ? 'Core' : 'Infinity'}</span>
+        </span>
       </div>
-    )}
-    <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5">
-      <span className={analysis.total >= 60 ? '' : 'text-amber-300'}>{analysis.total}/60</span>
-      {analysis.errors.length > 0 ? (
-        <span className="flex items-center gap-1 text-rose-300">
-          <AlertCircle size={12} /> {analysis.errors.length} problème{analysis.errors.length > 1 ? 's' : ''}
-        </span>
-      ) : analysis.warnings.length > 0 ? (
-        <span className="flex items-center gap-1 text-amber-300">
-          <AlertTriangle size={12} /> {analysis.warnings.length}
-        </span>
-      ) : (
-        analysis.total > 0 && (
-          <span className="flex items-center gap-1 text-emerald-400">
-            <CheckCircle2 size={12} /> valide
-          </span>
-        )
+      <div className="font-semibold text-white truncate">{deck.name}</div>
+      {tags.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-1.5">
+          {tags.map((tag) => (
+            <TagChip key={tag.id} tag={tag} />
+          ))}
+        </div>
       )}
-    </div>
-    <div className="mt-3 flex items-center gap-2">
-      <ProgressBar value={analysis.ownedRatio} className="flex-1 h-1" />
-      <span className="text-[10px] tabular-nums text-slate-500">{Math.round(analysis.ownedRatio * 100)} % possédé</span>
-    </div>
-  </motion.button>
+      <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5">
+        <span className={analysis.total >= 60 ? '' : 'text-amber-300'}>{analysis.total}/60</span>
+        {analysis.errors.length > 0 ? (
+          <span className="flex items-center gap-1 text-rose-300">
+            <AlertCircle size={12} /> {analysis.errors.length} problème{analysis.errors.length > 1 ? 's' : ''}
+          </span>
+        ) : analysis.warnings.length > 0 ? (
+          <span className="flex items-center gap-1 text-amber-300">
+            <AlertTriangle size={12} /> {analysis.warnings.length}
+          </span>
+        ) : (
+          analysis.total > 0 && (
+            <span className="flex items-center gap-1 text-emerald-400">
+              <CheckCircle2 size={12} /> valide
+            </span>
+          )
+        )}
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <ProgressBar value={analysis.ownedRatio} className="flex-1 h-1" />
+        <span className="text-[10px] tabular-nums text-slate-500">{Math.round(analysis.ownedRatio * 100)} % possédé</span>
+      </div>
+    </motion.button>
+  );
+};
+
+const ALERT_TONES = {
+  error: {
+    chip: 'bg-rose-500/10 text-rose-200 ring-rose-400/25 hover:ring-rose-400/45',
+    open: 'ring-rose-400/60',
+    panel: 'bg-gradient-to-br from-rose-500/[0.08] to-transparent ring-rose-400/20',
+  },
+  warning: {
+    chip: 'bg-amber-500/10 text-amber-200 ring-amber-400/25 hover:ring-amber-400/45',
+    open: 'ring-amber-400/60',
+    panel: 'bg-gradient-to-br from-amber-500/[0.07] to-transparent ring-amber-400/20',
+  },
+  neutral: {
+    chip: 'bg-white/[0.03] text-slate-300 ring-white/10 hover:ring-white/20',
+    open: 'ring-white/30',
+    panel: 'bg-white/[0.02] ring-white/[0.07]',
+  },
+};
+
+/** One line per deck an alert is about, opening it. */
+const AlertDeckRows = ({ rows, onOpenDeck }) => (
+  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-2 gap-y-0.5">
+    {rows.map(({ deck, detail }) => (
+      <button
+        key={deck.id}
+        onClick={() => onOpenDeck(deck.id)}
+        className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-white/[0.05] transition-colors"
+      >
+        <span className="flex-1 min-w-0 text-sm text-white truncate" title={deck.name}>
+          {deck.name}
+        </span>
+        <span className="flex-shrink-0 text-xs text-slate-400 tabular-nums">{detail}</span>
+        <ChevronRight size={14} className="flex-shrink-0 text-slate-500" />
+      </button>
+    ))}
+  </div>
 );
 
 /** Deck list (yours and the reference decks the AI learns from), or one deck's editor. */
@@ -95,6 +148,7 @@ const DecksView = ({ onOpenSidebar, onLocate }) => {
   const [tagFilter, setTagFilter] = useState([]);
   const [matchAll, setMatchAll] = useState(false);
   const [tagsOpen, setTagsOpen] = useState(false);
+  const [openAlert, setOpenAlert] = useState(null);
 
   const allocation = useCopyAllocation();
   const analyses = useMemo(
@@ -108,6 +162,52 @@ const DecksView = ({ onOpenSidebar, onLocate }) => {
     (d) => d.kind !== 'reference' && d.format === 'core' && analyses.get(d.id).errors.some((e) => e.code === 'legality')
   );
   const rotating = decks.filter((d) => d.kind !== 'reference' && d.format === 'core' && analyses.get(d.id).rotating.length);
+  const contestedCount = allocation.shared.filter((s) => s.contested).length;
+  const goToDeck = (id) => setView({ kind: 'decks', deckId: id });
+
+  // Folded into chips next to the tabs so the decks stay in sight; each one unfolds its details
+  const alerts = [];
+  if (illegal.length) {
+    alerts.push({
+      key: 'illegal',
+      tone: 'error',
+      icon: AlertCircle,
+      label: `${plural(illegal.length, 'deck')} ${illegal.length > 1 ? 'illégaux' : 'illégal'}`,
+      intro: "Ces decks Core contiennent des cartes qui n'y sont plus légales.",
+      rows: illegal.map((d) => ({
+        deck: d,
+        detail: plural(analyses.get(d.id).errors.filter((e) => e.code === 'legality').length, 'carte'),
+      })),
+    });
+  }
+  if (rotating.length) {
+    const { rotationSets: sets, rotationDate: date } = analyses.get(rotating[0].id);
+    alerts.push({
+      key: 'rotation',
+      tone: 'warning',
+      icon: CalendarClock,
+      label: `Rotation · ${plural(rotating.length, 'deck')}`,
+      intro: `${sets.length > 1 ? 'Les' : 'Le'} ${describeChapters(sets)} quitte${sets.length > 1 ? 'nt' : ''} le Core ${
+        date ? `le ${formatLongDate(date)}` : 'à la prochaine rotation'
+      } : ces cartes n'y seront plus légales.`,
+      link: { label: 'Préparer la rotation', onClick: () => setView({ kind: 'rotation' }) },
+      rows: rotating.map((d) => ({ deck: d, detail: plural(analyses.get(d.id).rotating.length, 'carte') })),
+    });
+  }
+  if (allocation.shared.length) {
+    alerts.push({
+      key: 'shared',
+      tone: contestedCount ? 'warning' : 'neutral',
+      icon: Split,
+      label: contestedCount
+        ? `${plural(contestedCount, 'carte')} à répartir`
+        : `${plural(allocation.shared.length, 'carte')} partagée${allocation.shared.length > 1 ? 's' : ''}`,
+      intro: contestedCount
+        ? "Réserve les exemplaires au deck qui les garde, les autres verront ce qu'il leur manque vraiment."
+        : 'Exemplaires répartis : chaque deck compte ce qui lui est réservé.',
+    });
+  }
+  const activeAlert = tab === 'mine' ? alerts.find((a) => a.key === openAlert) : null;
 
   const openDeck = view.deckId ? decks.find((d) => d.id === view.deckId) : null;
   const inTab = decks.filter((d) => (tab === 'reference' ? d.kind === 'reference' : d.kind !== 'reference'));
@@ -192,64 +292,87 @@ const DecksView = ({ onOpenSidebar, onLocate }) => {
             </p>
           )}
 
-          {(illegal.length > 0 || rotating.length > 0) && (
-            <div className="space-y-2">
-              {[
-                ...illegal.map((d) => ({ deck: d, tone: 'error', text: 'contient des cartes qui ne sont plus légales en Core.' })),
-                ...rotating.map((d) => ({
-                  deck: d,
-                  tone: 'warning',
-                  text: analyses.get(d.id).warnings.find((w) => w.code === 'rotation')?.message,
-                })),
-              ].map(({ deck: d, tone, text }) => (
-                <button
-                  key={`${tone}-${d.id}`}
-                  onClick={() => setView({ kind: 'decks', deckId: d.id })}
-                  className={`w-full flex items-center gap-3 text-left rounded-2xl px-4 py-3 ring-1 ring-inset transition-colors ${
-                    tone === 'error'
-                      ? 'bg-gradient-to-br from-rose-500/[0.09] to-transparent ring-rose-400/25 hover:ring-rose-400/40'
-                      : 'bg-gradient-to-br from-amber-500/[0.07] to-transparent ring-amber-400/20 hover:ring-amber-400/35'
-                  }`}
-                >
-                  <span
-                    className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                      tone === 'error' ? 'bg-rose-400/15 text-rose-300' : 'bg-amber-400/15 text-amber-300'
-                    }`}
-                  >
-                    {tone === 'error' ? <AlertCircle size={17} /> : <AlertTriangle size={17} />}
-                  </span>
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-sm font-semibold text-white truncate">{d.name}</span>
-                    <span className="block text-xs text-slate-400 leading-snug">{text}</span>
-                  </span>
-                  <ChevronRight size={16} className="flex-shrink-0 text-slate-500" />
-                </button>
-              ))}
+          <div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <div className="flex gap-1">
+                {[
+                  { key: 'mine', label: 'Mes decks', icon: Layers },
+                  { key: 'reference', label: 'Decks de référence', icon: BookMarked },
+                ].map((t) => {
+                  const count = decks.filter((d) => (t.key === 'reference' ? d.kind === 'reference' : d.kind !== 'reference')).length;
+                  return (
+                    <button
+                      key={t.key}
+                      onClick={() => setTab(t.key)}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+                        tab === t.key ? 'bg-white/[0.07] text-white ring-1 ring-inset ring-white/10' : 'text-slate-500 hover:text-white'
+                      }`}
+                    >
+                      <t.icon size={15} />
+                      {t.label}
+                      <span className="text-xs text-slate-500 tabular-nums">{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {tab === 'mine' && alerts.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 sm:ml-auto">
+                  {alerts.map((a) => {
+                    const open = activeAlert?.key === a.key;
+                    return (
+                      <button
+                        key={a.key}
+                        onClick={() => setOpenAlert(open ? null : a.key)}
+                        aria-expanded={open}
+                        className={`flex items-center gap-1.5 pl-2.5 pr-2 py-1.5 rounded-full text-xs font-medium ring-1 ring-inset transition-colors ${
+                          ALERT_TONES[a.tone].chip
+                        } ${open ? ALERT_TONES[a.tone].open : ''}`}
+                      >
+                        <a.icon size={13} className="flex-shrink-0" />
+                        {a.label}
+                        <ChevronDown size={13} className={`flex-shrink-0 opacity-60 transition-transform ${open ? 'rotate-180' : ''}`} />
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          )}
 
-          {tab === 'mine' && <SharedCardsPanel onOpenDeck={(id) => setView({ kind: 'decks', deckId: id })} />}
-
-          <div className="flex gap-1">
-            {[
-              { key: 'mine', label: 'Mes decks', icon: Layers },
-              { key: 'reference', label: 'Decks de référence', icon: BookMarked },
-            ].map((t) => {
-              const count = decks.filter((d) => (t.key === 'reference' ? d.kind === 'reference' : d.kind !== 'reference')).length;
-              return (
-                <button
-                  key={t.key}
-                  onClick={() => setTab(t.key)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                    tab === t.key ? 'bg-white/[0.07] text-white ring-1 ring-inset ring-white/10' : 'text-slate-500 hover:text-white'
-                  }`}
+            <AnimatePresence initial={false} mode="wait">
+              {activeAlert && (
+                <motion.div
+                  key={activeAlert.key}
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                  className="overflow-hidden"
                 >
-                  <t.icon size={15} />
-                  {t.label}
-                  <span className="text-xs text-slate-500 tabular-nums">{count}</span>
-                </button>
-              );
-            })}
+                  <div className="pt-3">
+                    <div className={`rounded-2xl ring-1 ring-inset p-2 ${ALERT_TONES[activeAlert.tone].panel}`}>
+                      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-2 pt-1 pb-2">
+                        <p className="flex-1 min-w-[12rem] text-xs text-slate-400 leading-snug">{activeAlert.intro}</p>
+                        {activeAlert.link && (
+                          <button
+                            onClick={activeAlert.link.onClick}
+                            className="flex items-center gap-0.5 text-xs font-medium text-amber-300 hover:text-amber-200"
+                          >
+                            {activeAlert.link.label}
+                            <ChevronRight size={13} />
+                          </button>
+                        )}
+                      </div>
+                      {activeAlert.key === 'shared' ? (
+                        <SharedCardsList onOpenDeck={goToDeck} />
+                      ) : (
+                        <AlertDeckRows rows={activeAlert.rows} onOpenDeck={goToDeck} />
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           {deckTags.length > 0 && (
@@ -318,7 +441,7 @@ const DecksView = ({ onOpenSidebar, onLocate }) => {
             </p>
           )}
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             <AnimatePresence initial={false}>
               {shown.map((deck) => (
                 <DeckTile
@@ -327,7 +450,7 @@ const DecksView = ({ onOpenSidebar, onLocate }) => {
                   tags={getDeckTags(deck, deckTags)}
                   analysis={analyses.get(deck.id)}
                   contested={contestedByDeck(deck.id)}
-                  onOpen={() => setView({ kind: 'decks', deckId: deck.id })}
+                  onOpen={() => goToDeck(deck.id)}
                 />
               ))}
             </AnimatePresence>
@@ -348,7 +471,7 @@ const DecksView = ({ onOpenSidebar, onLocate }) => {
         isOpen={importOpen}
         kind={tab}
         onClose={() => setImportOpen(false)}
-        onSaved={(id) => setView({ kind: 'decks', deckId: id })}
+        onSaved={goToDeck}
       />
       <DeckTagsModal isOpen={tagsOpen} onClose={() => setTagsOpen(false)} />
       {deleteDialog}

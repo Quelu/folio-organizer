@@ -1,4 +1,5 @@
 import { getDeckUsage } from './collection.js';
+import { getLocation, getPositionInPage } from './calculations.js';
 import { MAX_COPIES } from './deckRules.js';
 import { SPECIAL_RARITIES, baseNumber, findPocketCard } from './catalog.js';
 
@@ -93,6 +94,59 @@ export const getTradeableSurplus = (collection, decks, keep, getPrice) => {
     }
   }
   return [...items.values()].sort((a, b) => (b.price ?? -1) - (a.price ?? -1));
+};
+
+/**
+ * Where to fetch the copies given in a trade: the pockets holding that printing and variant,
+ * binder by binder in page order, so each binder is leafed through once.
+ * @param {{ card, foil: boolean, qty: number }[]} give
+ * @param {object} collection from buildCollection
+ * @param {object[]} binders the user's binders, in sidebar order
+ * @returns {{ rows: { id, card, foil, binder, cardNumber, location, take }[], short: { card, foil, missing }[] }}
+ *   short: copies no longer in the binders (changed since the trade was validated)
+ */
+export const getTradePullList = (give, collection, binders) => {
+  const rows = [];
+  const short = [];
+  for (const { card, foil, qty } of give) {
+    let needed = qty;
+    for (const copy of collection.entries.get(card.key)?.copies ?? []) {
+      if (needed <= 0) break;
+      if (copy.card.id !== card.id) continue;
+      const take = Math.min(foil ? copy.foil : copy.normal, needed);
+      if (take <= 0) continue;
+      needed -= take;
+      rows.push({
+        id: `${copy.binder.id}:${copy.cardNumber}${foil ? ':foil' : ''}`,
+        card,
+        foil,
+        binder: copy.binder,
+        cardNumber: copy.cardNumber,
+        location: copy.location,
+        take,
+        position: getPositionInPage(parseInt(copy.cardNumber, 10), copy.binder),
+      });
+    }
+    if (needed > 0) short.push({ card, foil, missing: needed });
+  }
+  const binderOrder = new Map(binders.map((b, i) => [b.id, i]));
+  rows.sort(
+    (a, b) =>
+      binderOrder.get(a.binder.id) - binderOrder.get(b.binder.id) || a.location.page - b.location.page || a.position - b.position
+  );
+  return { rows, short };
+};
+
+/**
+ * The binder pocket a received card goes in: a binder of its chapter, one where the pocket is
+ * still empty first.
+ * @returns {{ binder, cardNumber: string, location } | null} null without a binder of that chapter
+ */
+export const getTradeDestination = (card, binders) => {
+  const cardNumber = String(baseNumber(card.number));
+  const chapter = binders.filter((b) => b.gameType === 'lorcana' && String(b.setCode) === String(card.set));
+  const binder = chapter.find((b) => !(b.cards[cardNumber]?.quantity > 0)) ?? chapter[0];
+  return binder ? { binder, cardNumber, location: getLocation(baseNumber(card.number), binder) } : null;
 };
 
 /** Index of the first price >= value in an ascending list. */

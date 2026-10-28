@@ -267,7 +267,7 @@ const AppContent = () => {
               ) : view.kind === 'stats' ? (
                 <CollectionView onOpenSidebar={() => setSidebarOpen(true)} />
               ) : view.kind === 'trades' ? (
-                <TradesView onOpenSidebar={() => setSidebarOpen(true)} onShareCollection={() => openShare()} />
+                <TradesView onOpenSidebar={() => setSidebarOpen(true)} onShareCollection={() => openShare()} onLocate={locateCard} />
               ) : view.kind === 'rotation' ? (
                 <RotationView onOpenSidebar={() => setSidebarOpen(true)} />
               ) : view.kind === 'assistant' ? (

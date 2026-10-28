@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { AlertTriangle, ArrowLeftRight, Loader2, Share2, SlidersHorizontal, Upload, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeftRight, CheckCircle2, ListChecks, Loader2, Search, Share2, Shuffle, SlidersHorizontal, Upload, X } from 'lucide-react';
 import { useStore } from '../../hooks/storeContext';
 import { useCatalog } from '../../hooks/catalogContext';
 import { usePrices } from '../../hooks/usePrices';
@@ -7,6 +7,7 @@ import { useCardLang } from '../../hooks/useCardLang';
 import { useTradeSide, DEFAULT_TRADE_WANTS } from '../../hooks/useTradeSide';
 import { useToast } from '../ui/toastContext';
 import { readCollectionShare, resolveShare } from '../../utils/tradeShare';
+import { matchesQuery } from '../../utils/catalog';
 import {
   TRADE_RULES,
   getPointsScale,
@@ -17,6 +18,8 @@ import {
   proposeTrade,
   summarizeSide,
   getTradeBalance,
+  describeBalance,
+  sameTrade,
   getTradeClass,
   getTradeClassLabel,
   compareTradeClasses,
@@ -26,6 +29,7 @@ import { Segmented } from '../Collection/CollectionParts';
 import CopyButton from '../ui/CopyButton';
 import TradeRow from './TradeRow';
 import PointsScaleModal from './PointsScaleModal';
+import ValidatedTrade from './ValidatedTrade';
 
 const formatDate = (iso) =>
   iso ? new Date(iso).toLocaleDateString('fr-BE', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
@@ -91,8 +95,10 @@ const RuleOption = ({ rule, active, received, given, format, scale, onSelect }) 
   );
 };
 
-/** Trade items of one side, by rarity tier, each copy checkable. */
+/** Trade items of one side, by rarity tier, each copy checkable; filtered by name or to the chosen ones. */
 const TradeSide = ({ title, hint, items, selection, onSelect, format, reasons, empty }) => {
+  const [query, setQuery] = useState('');
+  const [onlyChosen, setOnlyChosen] = useState(false);
   const tiers = useMemo(() => {
     const groups = new Map();
     for (const item of items) {
@@ -104,6 +110,8 @@ const TradeSide = ({ title, hint, items, selection, onSelect, format, reasons, e
       .map(([tier, list]) => ({ tier, items: list.sort((a, b) => (b.price ?? -1) - (a.price ?? -1)) }));
   }, [items]);
   const chosen = summarizeSide(items, selection);
+  const shown = (item) => (!onlyChosen || selection[item.id] > 0) && matchesQuery(item.card, query.trim());
+  const visible = tiers.map((t) => ({ ...t, shown: t.items.filter(shown) })).filter((t) => t.shown.length > 0);
 
   return (
     <section data-preview-group className="rounded-2xl bg-white/[0.02] ring-1 ring-inset ring-white/5 p-3 sm:p-4 flex flex-col min-h-0 min-w-0">
@@ -115,20 +123,49 @@ const TradeSide = ({ title, hint, items, selection, onSelect, format, reasons, e
       </div>
       <p className="text-xs text-slate-500 mb-2">{hint}</p>
       {items.length > 0 && (
-        <div className="flex gap-3 mb-1 px-2 text-[11px]">
-          <button onClick={() => onSelect(Object.fromEntries(items.map((i) => [i.id, i.qty])))} className="text-indigo-300 hover:text-white">
-            Tout
+        <div className="flex flex-wrap items-center gap-2 mb-1">
+          <button
+            type="button"
+            onClick={() => setOnlyChosen((v) => !v)}
+            aria-pressed={onlyChosen}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] ring-1 ring-inset transition-colors ${
+              onlyChosen ? 'bg-indigo-500/15 ring-indigo-400/50 text-white' : 'ring-white/10 text-slate-400 hover:text-white'
+            }`}
+          >
+            <ListChecks size={12} />
+            Sélectionnées <b className="tabular-nums">{chosen.cards}</b>
           </button>
-          <button onClick={() => onSelect({})} className="text-slate-500 hover:text-white">
-            Aucune
-          </button>
+          {items.length > 8 && (
+            <div className="relative flex-1 min-w-[8rem]">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Filtrer…"
+                aria-label={`Filtrer : ${title}`}
+                className="field pl-7 py-1 text-xs"
+              />
+            </div>
+          )}
+          <div className="flex gap-3 ml-auto px-1 text-[11px]">
+            <button onClick={() => onSelect(Object.fromEntries(items.map((i) => [i.id, i.qty])))} className="text-indigo-300 hover:text-white">
+              Tout
+            </button>
+            <button onClick={() => onSelect({})} className="text-slate-500 hover:text-white">
+              Aucune
+            </button>
+          </div>
         </div>
       )}
       {items.length === 0 ? (
         <p className="text-sm text-slate-500 py-6 text-center">{empty}</p>
+      ) : visible.length === 0 ? (
+        <p className="text-sm text-slate-500 py-6 text-center">
+          {onlyChosen && chosen.cards === 0 ? 'Aucune carte sélectionnée.' : 'Aucune carte ne correspond.'}
+        </p>
       ) : (
         <div className="overflow-y-auto scrollbar-thin max-h-[55vh] -mx-1 px-1">
-          {tiers.map(({ tier, items: list }) => (
+          {visible.map(({ tier, items: list, shown: rows }) => (
             <div key={tier} className="mb-2">
               <div className="flex items-center justify-between px-2 pt-2 pb-1 text-[11px] uppercase tracking-wider text-slate-500">
                 <span>
@@ -139,7 +176,7 @@ const TradeSide = ({ title, hint, items, selection, onSelect, format, reasons, e
                 </span>
               </div>
               <ul className="space-y-0.5">
-                {list.map((item) => (
+                {rows.map((item) => (
                   <TradeRow
                     key={item.id}
                     item={item}
@@ -158,30 +195,10 @@ const TradeSide = ({ title, hint, items, selection, onSelect, format, reasons, e
   );
 };
 
-/** What the chosen trade looks like under the rule: even, or which side gets more. */
-const balanceText = (rule, balance, partner, format) => {
-  if (rule === 'rarity') {
-    if (balance.even) return 'Équilibré : même rareté des deux côtés';
-    return balance.tiers
-      .slice(0, 3)
-      .map(({ tier, diff }) => {
-        const { label, foil } = getTradeClassLabel(tier);
-        return `${label}${foil ? ' foil' : ''} +${Math.abs(diff)} ${diff > 0 ? 'pour toi' : `pour ${partner}`}`;
-      })
-      .join(' · ');
-  }
-  if (rule === 'points') {
-    if (balance.even) return 'Équilibré en points de rareté';
-    const points = plural(Math.abs(balance.diff), 'point');
-    return balance.diff > 0 ? `Tu reçois ${points} de plus` : `Tu donnes ${points} de plus`;
-  }
-  if (balance.even) return 'Équilibré à 5 % près';
-  return balance.diff > 0 ? `Tu reçois ${format(balance.diff)} de plus` : `Tu donnes ${format(-balance.diff)} de plus`;
-};
-
 /** Trades with one player: the cards each one can give the other, the rules' proposals, the chosen trade. */
-const PartnerMatch = ({ partner, toolbar }) => {
-  const { prefs, setPref } = useStore();
+const PartnerMatch = ({ partner, toolbar, onLocate }) => {
+  const { prefs, setPref, setPartnerTrade } = useStore();
+  const notify = useToast();
   const { index } = useCatalog();
   const cardLang = useCardLang();
   const { status, getPrice, format, source: priceSource } = usePrices();
@@ -189,6 +206,8 @@ const PartnerMatch = ({ partner, toolbar }) => {
   const [rule, setRule] = useState('rarity');
   // Copies the user picked by hand; null follows the rule's proposal
   const [custom, setCustom] = useState(null);
+  // 0: the rule's best proposal; another number: another proposal of the same rule
+  const [variant, setVariant] = useState(0);
   const [pointsOpen, setPointsOpen] = useState(false);
   const keep = prefs.tradeKeep ?? 1;
   const scale = useMemo(() => getPointsScale(prefs.tradePoints), [prefs.tradePoints]);
@@ -202,8 +221,11 @@ const PartnerMatch = ({ partner, toolbar }) => {
   );
   const giveItems = useMemo(() => (mine ? matchWants(theirs.wants, mine.haves) : []), [mine, theirs]);
   const proposals = useMemo(
-    () => Object.fromEntries(TRADE_RULES.map((r) => [r.key, proposeTrade(r.key, receiveItems, giveItems, scale)])),
-    [receiveItems, giveItems, scale]
+    () =>
+      Object.fromEntries(
+        TRADE_RULES.map((r) => [r.key, proposeTrade(r.key, receiveItems, giveItems, scale, r.key === rule ? variant : 0)])
+      ),
+    [receiveItems, giveItems, scale, rule, variant]
   );
 
   const selection = custom ?? proposals[rule];
@@ -213,13 +235,46 @@ const PartnerMatch = ({ partner, toolbar }) => {
 
   const chooseRule = (key) => {
     setRule(key);
+    setVariant(0);
     setCustom(null);
+  };
+  const isEven = (proposal) =>
+    getTradeBalance(rule, summarizeSide(receiveItems, proposal.receive, scale), summarizeSide(giveItems, proposal.give, scale)).even;
+  // The next seed that picks other cards than the ones shown, as even as the best proposal
+  const anotherProposal = () => {
+    const evenOnly = isEven(proposeTrade(rule, receiveItems, giveItems, scale));
+    for (let v = variant + 1; v <= variant + 40; v++) {
+      const next = proposeTrade(rule, receiveItems, giveItems, scale, v);
+      if (!sameTrade(next, selection) && (!evenOnly || isEven(next))) {
+        setVariant(v);
+        setCustom(null);
+        return;
+      }
+    }
+    notify({ message: 'Pas d’autre proposition avec cette règle : elle prend déjà toutes les cartes possibles' });
   };
   const select = (side) => (next) => setCustom({ ...selection, [side]: next });
   // A change to what the user looks for or gives changes the candidates: back to the proposal
   const setWants = (changes) => {
     setPref('tradeWants', { ...wantsPrefs, ...changes });
     setCustom(null);
+  };
+
+  const validate = () => {
+    const stored = (items, chosen) => picked(items, chosen).map(({ card, foil, qty, price }) => ({ id: card.id, foil, qty, price }));
+    setPartnerTrade(partner.id, {
+      rule,
+      receive: stored(receiveItems, selection.receive),
+      give: stored(giveItems, selection.give),
+      found: [],
+    });
+  };
+  // Back from a validated trade to its cards, still checked
+  const edit = (trade) => {
+    const toSelection = (list) => Object.fromEntries(list.map((t) => [`${t.id}${t.foil ? '-foil' : ''}`, t.qty]));
+    setRule(trade.rule);
+    setCustom({ receive: toSelection(trade.receive), give: toSelection(trade.give) });
+    setPartnerTrade(partner.id, null);
   };
 
   const picked = (items, chosen) =>
@@ -239,6 +294,10 @@ const PartnerMatch = ({ partner, toolbar }) => {
       : '';
 
   const nothing = receiveItems.length === 0 && giveItems.length === 0;
+
+  if (partner.trade) {
+    return <ValidatedTrade partner={partner} toolbar={toolbar} scale={scale} onEdit={() => edit(partner.trade)} onLocate={onLocate} />;
+  }
 
   return (
     <>
@@ -336,14 +395,28 @@ const PartnerMatch = ({ partner, toolbar }) => {
                   <div>
                     <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-2">
                       <h2 className="text-sm font-semibold text-white">Options d’échange</h2>
-                      {custom && (
+                      {custom ? (
                         <button onClick={() => setCustom(null)} className="text-[11px] text-indigo-300 hover:text-white">
                           Ajusté à la main · revenir à la proposition
                         </button>
+                      ) : (
+                        variant > 0 && (
+                          <button onClick={() => setVariant(0)} className="text-[11px] text-indigo-300 hover:text-white">
+                            Autre proposition · revenir à la meilleure
+                          </button>
+                        )
                       )}
                       <button
+                        onClick={anotherProposal}
+                        title="Les mêmes règles, avec d’autres cartes"
+                        className="ml-auto flex items-center gap-1.5 text-[11px] text-slate-300 hover:text-white"
+                      >
+                        <Shuffle size={12} />
+                        Autre proposition
+                      </button>
+                      <button
                         onClick={() => setPointsOpen(true)}
-                        className="ml-auto flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-white"
+                        className="flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-white"
                       >
                         <SlidersHorizontal size={12} />
                         Régler les points de rareté
@@ -418,11 +491,15 @@ const PartnerMatch = ({ partner, toolbar }) => {
             </div>
             {received.cards + given.cards > 0 && (
               <span className={`text-xs font-semibold ${balance.even ? 'text-emerald-300' : 'text-amber-300'}`}>
-                {balanceText(rule, balance, owner, format)}
+                {describeBalance(rule, balance, owner, format)}
               </span>
             )}
             <div className="flex gap-2 ml-auto">
-              <CopyButton text={text} label="Copier la proposition" toast="Proposition d'échange copiée" className="btn-primary px-3 py-1.5" />
+              <CopyButton text={text} label="Copier" toast="Proposition d'échange copiée" className="btn-secondary px-3 py-1.5" />
+              <button onClick={validate} disabled={received.cards + given.cards === 0} className="btn-primary px-3 py-1.5">
+                <CheckCircle2 size={15} />
+                Valider l’échange
+              </button>
             </div>
           </div>
         </div>
@@ -475,15 +552,17 @@ const Onboarding = ({ onShare, onImport }) => (
 /**
  * Trades with other players: their shared collections, imported from a file, against the user's.
  * @param {() => void} onShare opens the export of the user's collection
+ * @param {(binderId: string, cardNumber: number) => void} onLocate opens a binder on a card
  */
-const PartnerTrade = ({ onShare }) => {
+const PartnerTrade = ({ onShare, onLocate }) => {
   const { partners, savePartner, deletePartner, restorePartner, view, setView } = useStore();
   const { index } = useCatalog();
   const notify = useToast();
   const fileRef = useRef(null);
   const [dragging, setDragging] = useState(false);
-  // The player chosen last, kept in the view so it survives a tab change
-  const partner = partners.find((p) => p.id === view.partnerId) ?? partners.at(-1) ?? null;
+  // The player chosen last, kept in the view so it survives a tab change; else a validated trade
+  // (back from a binder where the user fetched its cards), else the latest import
+  const partner = partners.find((p) => p.id === view.partnerId) ?? partners.find((p) => p.trade) ?? partners.at(-1) ?? null;
   const setSelectedId = (partnerId) => setView({ kind: 'trades', tab: 'partner', partnerId });
 
   const importFile = async (file) => {
@@ -562,7 +641,7 @@ const PartnerTrade = ({ onShare }) => {
       }}
     >
       {partner && index ? (
-        <PartnerMatch key={partner.id} partner={partner} toolbar={toolbar} />
+        <PartnerMatch key={partner.id} partner={partner} toolbar={toolbar} onLocate={onLocate} />
       ) : (
         <div className="flex-1 overflow-auto scrollbar-thin px-4 sm:px-6 pt-4 pb-10">
           <div className="max-w-5xl mx-auto space-y-4">
