@@ -12,6 +12,7 @@ import DecksView from './components/Decks/DecksView';
 import CollectionView from './components/Collection/CollectionView';
 import TradesView from './components/Trades/TradesView';
 import RotationView from './components/Rotation/RotationView';
+import SimulationView from './components/Simulation/SimulationView';
 import ShareCollectionModal from './components/Trades/ShareCollectionModal';
 import BinderView from './components/BinderView/BinderView';
 import BinderFormModal from './components/Modals/BinderFormModal';
@@ -270,6 +271,8 @@ const AppContent = () => {
                 <TradesView onOpenSidebar={() => setSidebarOpen(true)} onShareCollection={() => openShare()} />
               ) : view.kind === 'rotation' ? (
                 <RotationView onOpenSidebar={() => setSidebarOpen(true)} />
+              ) : view.kind === 'simulation' ? (
+                <SimulationView onOpenSidebar={() => setSidebarOpen(true)} />
               ) : view.kind === 'assistant' ? (
                 <Suspense
                   fallback={
