@@ -33,6 +33,7 @@ import { buildLocalizedCards } from '../src/utils/lorcanaJson.js';
 import { buildCollection, getPullList, getCopyAllocation, getDeckUsage, getPulledCount } from '../src/utils/collection.js';
 import { analyzeDeck, parseDeckList, formatDeckList } from '../src/utils/deckRules.js';
 import { formatDeckProfile } from '../src/utils/deckProfile.js';
+import { getDeckTags } from '../src/utils/deckTags.js';
 import { getBinderStats, getLocation } from '../src/utils/calculations.js';
 import { getGame, getLorcanaSetName, setKnownLorcanaSets, withFrenchNames, LORCANA_RARITIES } from '../src/data/games.js';
 
@@ -94,6 +95,7 @@ const loadBackup = async () => {
       // Same defaults as the app's migration, for backups saved by older versions
       binders: data.binders.map((b) => ({ setSize: getGame(b.gameType).defaultSetSize, gridRows: 3, gridCols: 3, cards: {}, ...b })),
       decks: data.decks ?? [],
+      deckTags: data.deckTags ?? [],
       pulls: data.pulls ?? [],
       allocations: data.allocations ?? {},
       prefs: data.prefs ?? {},
@@ -213,6 +215,12 @@ const formatLocation = (binder, cardNumber) => {
 };
 
 const formatCopies = (normal, foil) => `×${normal + foil}${foil ? ` dont ${foil} foil` : ''}`;
+
+/** " · tags Compétitif, Fun", nothing for a deck without tags. */
+const formatTags = (deck, deckTags) => {
+  const names = getDeckTags(deck, deckTags).map((t) => t.name);
+  return names.length ? ` · tags ${names.join(', ')}` : '';
+};
 
 /** "possédée ×3 dont 1 foil : « Ch1 » page 5 … ×3 (1 sortie pour un deck)" */
 const formatOwned = (entry) => {
@@ -548,16 +556,17 @@ tool(
   'list_decks',
   {
     title: 'Lister les decks',
-    description: 'Liste les decks de la sauvegarde (les miens et ceux de référence) : format, taille, encres, validité et part des cartes possédées.',
+    description:
+      'Liste les decks de la sauvegarde (les miens et ceux de référence) : tags, format, taille, encres, validité et part des cartes possédées.',
     annotations: { readOnlyHint: true },
   },
   async () => {
-    const { decks, index, collection, allocation } = await getContext();
+    const { decks, deckTags, index, collection, allocation } = await getContext();
     if (!decks.length) return 'Aucun deck dans la sauvegarde.';
     return decks
       .map((deck) => {
         const a = analyzeDeck(deck, index, collection, 'fr', allocation.availableFor);
-        return `- « ${deck.name} » (id ${deck.id}) · ${deck.kind === 'reference' ? 'référence' : 'mon deck'}${deck.locked ? ' verrouillé' : ''} · ${deck.format === 'infinity' ? 'Infinity' : 'Core'} · ${a.total} cartes · ${a.inks.map(inkLabel).join(' / ') || '—'} · ${a.valid ? 'valide' : `${a.errors.length} erreur(s)`} · possédé ${pct(a.ownedRatio)}`;
+        return `- « ${deck.name} » (id ${deck.id}) · ${deck.kind === 'reference' ? 'référence' : 'mon deck'}${deck.locked ? ' verrouillé' : ''}${formatTags(deck, deckTags)} · ${deck.format === 'infinity' ? 'Infinity' : 'Core'} · ${a.total} cartes · ${a.inks.map(inkLabel).join(' / ') || '—'} · ${a.valid ? 'valide' : `${a.errors.length} erreur(s)`} · possédé ${pct(a.ownedRatio)}`;
       })
       .join('\n');
   }
@@ -572,14 +581,14 @@ tool(
     annotations: { readOnlyHint: true },
   },
   async ({ deck: query }) => {
-    const { decks, index, collection, pulls, allocation } = await getContext();
+    const { decks, deckTags, index, collection, pulls, allocation } = await getContext();
     const deck = findDeck(decks, query);
     const a = analyzeDeck(deck, index, collection, 'fr', allocation.availableFor);
     const pulledFor = (key) =>
       (collection.entries.get(key)?.copies ?? []).reduce((s, c) => s + getPulledCount(pulls, c.binder.id, c.cardNumber, deck.id), 0);
     const shared = allocation.shared.filter((c) => c.decks.some((u) => u.deck.id === deck.id));
     return [
-      `« ${deck.name} » · ${deck.kind === 'reference' ? 'deck de référence' : 'mon deck'}${deck.locked ? ' verrouillé (ses exemplaires lui sont réservés)' : ''} · format ${deck.format === 'infinity' ? 'Infinity' : 'Core'}${deck.sourceUrl ? ` · source ${deck.sourceUrl}` : ''}`,
+      `« ${deck.name} » · ${deck.kind === 'reference' ? 'deck de référence' : 'mon deck'}${deck.locked ? ' verrouillé (ses exemplaires lui sont réservés)' : ''}${formatTags(deck, deckTags)} · format ${deck.format === 'infinity' ? 'Infinity' : 'Core'}${deck.sourceUrl ? ` · source ${deck.sourceUrl}` : ''}`,
       formatAnalysisHeader(a),
       `Possédé : ${a.owned}/${a.total} exemplaires (${pct(a.ownedRatio)})`,
       'Cartes :',

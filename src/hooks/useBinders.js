@@ -4,6 +4,7 @@ import { fetchLorcastCard } from '../utils/lorcastApi';
 import { getGame } from '../data/games';
 import { withCounts, changeCopies } from '../utils/cards';
 import { MAX_VERSIONS } from '../utils/deckRules';
+import { findTagByName, nextTagColor } from '../utils/deckTags';
 
 const MAX_HISTORY = 300;
 
@@ -12,6 +13,8 @@ const DEFAULT_STATE = {
   activeBinderId: null,
   addHistory: [],
   decks: [],
+  // Tags to sort the decks, in the user's order: { id, name, color } (see utils/deckTags.js)
+  deckTags: [],
   // Copies taken out of a binder for a deck: { id, deckId, binderId, cardNumber, qty }
   pulls: [],
   // Copies of a card several decks share, assigned to one of them: { [cardKey]: { [deckId]: qty } }
@@ -316,6 +319,7 @@ export const useBinders = () => {
       source: data.source ?? 'manual',
       sourceUrl: data.sourceUrl ?? '',
       locked: false,
+      tags: data.tags ?? [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
       versions: [],
@@ -441,6 +445,60 @@ export const useBinders = () => {
     }));
   }, []);
 
+  /** Creates a deck tag and returns its id, or the id of the tag already named so. */
+  const createDeckTag = useCallback((name) => {
+    const tags = stateRef.current.deckTags;
+    const existing = findTagByName(tags, name);
+    if (existing) return existing.id;
+    const tag = { id: crypto.randomUUID(), name: name.trim(), color: nextTagColor(tags) };
+    setState((prev) => ({ ...prev, deckTags: [...prev.deckTags, tag] }));
+    return tag.id;
+  }, []);
+
+  /** Renames or recolors a tag. changes: { name?, color? } */
+  const updateDeckTag = useCallback((tagId, changes) => {
+    setState((prev) => ({ ...prev, deckTags: prev.deckTags.map((t) => (t.id === tagId ? { ...t, ...changes } : t)) }));
+  }, []);
+
+  /** Deletes a tag, taken off every deck, and returns what restores it. */
+  const deleteDeckTag = useCallback((tagId) => {
+    const prev = stateRef.current;
+    const index = prev.deckTags.findIndex((t) => t.id === tagId);
+    if (index === -1) return null;
+    const snapshot = { tag: prev.deckTags[index], index, deckIds: prev.decks.filter((d) => d.tags?.includes(tagId)).map((d) => d.id) };
+    setState((p) => ({
+      ...p,
+      deckTags: p.deckTags.filter((t) => t.id !== tagId),
+      decks: p.decks.map((d) => (d.tags?.includes(tagId) ? { ...d, tags: d.tags.filter((id) => id !== tagId) } : d)),
+    }));
+    return snapshot;
+  }, []);
+
+  const restoreDeckTag = useCallback(({ tag, index, deckIds }) => {
+    setState((prev) => {
+      if (prev.deckTags.some((t) => t.id === tag.id)) return prev;
+      const deckTags = [...prev.deckTags];
+      deckTags.splice(index, 0, tag);
+      return {
+        ...prev,
+        deckTags,
+        decks: prev.decks.map((d) => (deckIds.includes(d.id) ? { ...d, tags: [...(d.tags ?? []), tag.id] } : d)),
+      };
+    });
+  }, []);
+
+  /** Moves a tag one place up (-1) or down (1) in the tag list, the order of the filters. */
+  const moveDeckTag = useCallback((tagId, direction) => {
+    setState((prev) => {
+      const index = prev.deckTags.findIndex((t) => t.id === tagId);
+      const target = index + direction;
+      if (index === -1 || target < 0 || target >= prev.deckTags.length) return prev;
+      const deckTags = [...prev.deckTags];
+      [deckTags[index], deckTags[target]] = [deckTags[target], deckTags[index]];
+      return { ...prev, deckTags };
+    });
+  }, []);
+
   /** Stores a collection another player shared, replacing the previous one of the same player. Returns its id. */
   const savePartner = useCallback((share) => {
     const same = (p) => p.owner.toLowerCase() === share.owner.toLowerCase();
@@ -483,6 +541,7 @@ export const useBinders = () => {
     addHistory: state.addHistory,
     prefs: state.prefs,
     decks: state.decks,
+    deckTags: state.deckTags,
     pulls: state.pulls,
     allocations: state.allocations,
     partners: state.partners,
@@ -515,6 +574,11 @@ export const useBinders = () => {
     pullCards,
     returnCards,
     setAllocation,
+    createDeckTag,
+    updateDeckTag,
+    deleteDeckTag,
+    restoreDeckTag,
+    moveDeckTag,
     savePartner,
     deletePartner,
     restorePartner,

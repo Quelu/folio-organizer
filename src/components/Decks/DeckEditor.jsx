@@ -38,6 +38,7 @@ import { useCopyAllocation } from '../../hooks/useCopyAllocation';
 import { useDeckColor } from '../../hooks/useDeckColor';
 import { useToast } from '../ui/toastContext';
 import SharedCardsPanel from './SharedCardsPanel';
+import { DeckTagPicker } from './DeckTags';
 
 const TABS = [
   { key: 'list', label: 'Liste' },
@@ -184,6 +185,7 @@ const DeckEditor = ({ deck, onBack, onOpenSidebar, onLocate, onDelete }) => {
                     {getInk(ink).label}
                   </span>
                 ))}
+                <DeckTagPicker deck={deck} />
               </div>
               <input
                 value={deck.name}

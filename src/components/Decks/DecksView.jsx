@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, ClipboardPaste, AlertTriangle, AlertCircle, CheckCircle2, Layers, BookMarked, Menu as MenuIcon, Loader2, Split, ChevronRight, Lock } from 'lucide-react';
+import { Plus, ClipboardPaste, AlertTriangle, AlertCircle, CheckCircle2, Layers, BookMarked, Menu as MenuIcon, Loader2, Split, ChevronRight, Lock, Tag, Settings2 } from 'lucide-react';
 import ProgressBar from '../ui/ProgressBar';
 import ConfirmDialog from '../ui/ConfirmDialog';
 import DeckEditor from './DeckEditor';
@@ -13,9 +13,11 @@ import { useToast } from '../ui/toastContext';
 import { analyzeDeck } from '../../utils/deckRules';
 import { useCopyAllocation } from '../../hooks/useCopyAllocation';
 import SharedCardsPanel from './SharedCardsPanel';
+import { TagChip, DeckTagsModal } from './DeckTags';
 import { getInk } from '../../utils/catalog';
+import { getDeckTags, matchesTags } from '../../utils/deckTags';
 
-const DeckTile = ({ deck, analysis, contested, onOpen }) => (
+const DeckTile = ({ deck, tags, analysis, contested, onOpen }) => (
   <motion.button
     layout
     initial={{ opacity: 0, y: 12 }}
@@ -47,6 +49,13 @@ const DeckTile = ({ deck, analysis, contested, onOpen }) => (
       </span>
     </div>
     <div className="font-semibold text-white truncate">{deck.name}</div>
+    {tags.length > 0 && (
+      <div className="flex flex-wrap gap-1 mt-1.5">
+        {tags.map((tag) => (
+          <TagChip key={tag.id} tag={tag} />
+        ))}
+      </div>
+    )}
     <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5">
       <span className={analysis.total >= 60 ? '' : 'text-amber-300'}>{analysis.total}/60</span>
       {analysis.errors.length > 0 ? (
@@ -75,13 +84,17 @@ const DeckTile = ({ deck, analysis, contested, onOpen }) => (
 /** Deck list (yours and the reference decks the AI learns from), or one deck's editor. */
 const DecksView = ({ onOpenSidebar, onLocate }) => {
   const notify = useToast();
-  const { decks, view, setView, createDeck, deleteDeck, restoreDeck } = useStore();
+  const { decks, deckTags, view, setView, createDeck, deleteDeck, restoreDeck } = useStore();
   const { index, status, loaded, total } = useCatalog();
   const cardLang = useCardLang();
   const collection = useCollection();
   const [tab, setTab] = useState('mine');
   const [importOpen, setImportOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
+  // Tags the list is filtered on, kept while a deck is open; matchAll: decks with all of them
+  const [tagFilter, setTagFilter] = useState([]);
+  const [matchAll, setMatchAll] = useState(false);
+  const [tagsOpen, setTagsOpen] = useState(false);
 
   const allocation = useCopyAllocation();
   const analyses = useMemo(
@@ -97,7 +110,12 @@ const DecksView = ({ onOpenSidebar, onLocate }) => {
   const rotating = decks.filter((d) => d.kind !== 'reference' && d.format === 'core' && analyses.get(d.id).rotating.length);
 
   const openDeck = view.deckId ? decks.find((d) => d.id === view.deckId) : null;
-  const shown = decks.filter((d) => (tab === 'reference' ? d.kind === 'reference' : d.kind !== 'reference'));
+  const inTab = decks.filter((d) => (tab === 'reference' ? d.kind === 'reference' : d.kind !== 'reference'));
+  // A deleted tag drops out of the filter
+  const selectedTags = tagFilter.filter((id) => deckTags.some((t) => t.id === id));
+  const shown = inTab.filter((d) => matchesTags(d, selectedTags, matchAll));
+  const toggleTag = (tagId) =>
+    setTagFilter((ids) => (ids.includes(tagId) ? ids.filter((id) => id !== tagId) : [...ids, tagId]));
 
   const confirmDelete = () => {
     const snapshot = deleteDeck(pendingDelete.id);
@@ -234,6 +252,64 @@ const DecksView = ({ onOpenSidebar, onLocate }) => {
             })}
           </div>
 
+          {deckTags.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap" role="group" aria-label="Filtrer par tags">
+              <Tag size={13} className="text-slate-500 mr-0.5" aria-hidden />
+              {deckTags.map((tag) => {
+                const active = selectedTags.includes(tag.id);
+                const count = inTab.filter((d) => d.tags?.includes(tag.id)).length;
+                return (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    onClick={() => toggleTag(tag.id)}
+                    aria-pressed={active}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-colors ${
+                      active ? 'font-medium' : 'ring-1 ring-inset ring-white/10 text-slate-400 hover:text-white hover:bg-white/5'
+                    }`}
+                    style={active ? { color: tag.color, background: `${tag.color}1f`, boxShadow: `inset 0 0 0 1px ${tag.color}99` } : undefined}
+                  >
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: tag.color }} />
+                    {tag.name}
+                    <span className="text-[11px] tabular-nums opacity-60">{count}</span>
+                  </button>
+                );
+              })}
+              {selectedTags.length > 1 && (
+                <div className="flex items-center rounded-md ring-1 ring-inset ring-white/10 p-0.5 ml-1" role="group" aria-label="Decks affichés">
+                  {[
+                    { value: false, label: 'Un des tags' },
+                    { value: true, label: 'Tous les tags' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.label}
+                      type="button"
+                      onClick={() => setMatchAll(opt.value)}
+                      aria-pressed={matchAll === opt.value}
+                      className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
+                        matchAll === opt.value ? 'bg-white/10 text-white' : 'text-slate-500 hover:text-white'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {selectedTags.length > 0 && (
+                <button type="button" onClick={() => setTagFilter([])} className="px-1.5 text-xs text-slate-500 hover:text-white">
+                  Effacer
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setTagsOpen(true)}
+                className="ml-auto inline-flex items-center gap-1 text-xs text-slate-500 hover:text-white"
+              >
+                <Settings2 size={13} /> Gérer les tags
+              </button>
+            </div>
+          )}
+
           {tab === 'reference' && (
             <p className="text-sm text-slate-400 leading-relaxed rounded-xl bg-white/[0.02] ring-1 ring-inset ring-white/5 p-4">
               Ajoute ici des decks qui gagnent (Dreamborn, Inkdecks, Lorcana.gg, résultats de tournois) : colle leur liste
@@ -248,6 +324,7 @@ const DecksView = ({ onOpenSidebar, onLocate }) => {
                 <DeckTile
                   key={deck.id}
                   deck={deck}
+                  tags={getDeckTags(deck, deckTags)}
                   analysis={analyses.get(deck.id)}
                   contested={contestedByDeck(deck.id)}
                   onOpen={() => setView({ kind: 'decks', deckId: deck.id })}
@@ -257,7 +334,11 @@ const DecksView = ({ onOpenSidebar, onLocate }) => {
           </div>
           {shown.length === 0 && (
             <p className="text-sm text-slate-500 text-center py-10">
-              {tab === 'reference' ? 'Aucun deck de référence.' : "Aucun deck pour l'instant : crée-en un, importe une liste ou demande à l'assistant IA."}
+              {inTab.length > 0
+                ? `Aucun deck avec ${selectedTags.length > 1 ? (matchAll ? 'tous ces tags' : 'un de ces tags') : 'ce tag'}.`
+                : tab === 'reference'
+                  ? 'Aucun deck de référence.'
+                  : "Aucun deck pour l'instant : crée-en un, importe une liste ou demande à l'assistant IA."}
             </p>
           )}
         </div>
@@ -269,6 +350,7 @@ const DecksView = ({ onOpenSidebar, onLocate }) => {
         onClose={() => setImportOpen(false)}
         onSaved={(id) => setView({ kind: 'decks', deckId: id })}
       />
+      <DeckTagsModal isOpen={tagsOpen} onClose={() => setTagsOpen(false)} />
       {deleteDialog}
     </div>
   );

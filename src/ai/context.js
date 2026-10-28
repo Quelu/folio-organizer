@@ -1,6 +1,7 @@
 import { formatCardLine, getInk } from '../utils/catalog';
 import { formatDeckList } from '../utils/deckRules';
 import { getCopyAllocation } from '../utils/collection';
+import { getDeckTags } from '../utils/deckTags';
 
 const INSTRUCTIONS = `Tu es l'assistant de Folio, une application pour ranger sa collection de cartes Disney Lorcana dans des fardes (classeurs) et construire des decks.
 
@@ -59,7 +60,7 @@ const CARD_NAMES = {
   en: "Noms de cartes : l'utilisateur affiche les cartes en anglais. Dans ton texte, utilise les noms anglais ; les cartes citées avec [[id]] s'affichent d'elles-mêmes.",
 };
 
-export const buildSystemPrompt = ({ binders, collection, decks, index, includeReferences, lang = 'fr', today = new Date() }) => {
+export const buildSystemPrompt = ({ binders, collection, decks, deckTags = [], index, includeReferences, lang = 'fr', today = new Date() }) => {
   const references = includeReferences ? decks.filter((d) => d.kind === 'reference' && d.cards.length) : [];
   const myDecks = decks.filter((d) => d.kind !== 'reference');
   const inkTotals = {};
@@ -77,7 +78,10 @@ export const buildSystemPrompt = ({ binders, collection, decks, index, includeRe
     }\n${formatCollection(collection, myDecks)}`,
     `## Decks de l'utilisateur\n${
       myDecks
-        .map((d) => `- id ${d.id} : ${d.name} (${d.cards.reduce((s, c) => s + c.qty, 0)} cartes, ${d.format}${d.locked ? ', verrouillé' : ''})`)
+        .map((d) => {
+          const tags = getDeckTags(d, deckTags).map((t) => t.name);
+          return `- id ${d.id} : ${d.name} (${d.cards.reduce((s, c) => s + c.qty, 0)} cartes, ${d.format}${d.locked ? ', verrouillé' : ''}${tags.length ? `, tags : ${tags.join(', ')}` : ''})`;
+        })
         .join('\n') ||
       '- aucun'
     }`,

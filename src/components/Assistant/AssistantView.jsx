@@ -160,7 +160,7 @@ const ScopePicker = ({ binders, selected, onChange, includeReferences, onInclude
 
 const AssistantView = ({ onOpenSidebar }) => {
   const store = useStore();
-  const { binders, decks, allocations, prefs, view, setView } = store;
+  const { binders, decks, deckTags, allocations, prefs, view, setView } = store;
   const { index, loaded, total } = useCatalog();
   const prices = usePrices();
   const [settings, setSettings] = useState(loadAiSettings);
@@ -197,12 +197,13 @@ const AssistantView = ({ onOpenSidebar }) => {
             binders: binders.filter((b) => scope.includes(b.id)),
             collection,
             decks,
+            deckTags,
             index,
             includeReferences,
             lang: prefs.cardLanguage ?? 'fr',
           })
         : null,
-    [conversation, index, binders, scope, collection, decks, includeReferences, prefs.cardLanguage]
+    [conversation, index, binders, scope, collection, decks, deckTags, includeReferences, prefs.cardLanguage]
   );
   const estimate = pendingSystem ? estimateTokens(pendingSystem.map((b) => b.text).join('')) : 0;
 
