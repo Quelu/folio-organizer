@@ -16,11 +16,32 @@ import { STYLES, styleLabel } from '../../utils/simulation/pilots';
 import { winRate } from '../../utils/simulation/stats';
 import { SERIES, formatNumber, formatPoints } from './shared';
 
+// Games needed at most (an even match, near 50 %): a lopsided one gets there sooner
 const PRECISIONS = [
-  { value: 0.05, label: '± 5 pts', title: 'Environ 400 parties' },
-  { value: 0.03, label: '± 3 pts', title: 'Environ 1 000 parties' },
-  { value: 0.02, label: '± 2 pts', title: 'Environ 2 500 parties' },
-  { value: 0.01, label: '± 1 pt', title: 'Environ 10 000 parties' },
+  {
+    value: 0.05,
+    label: '± 5 pts',
+    title: 'Environ 400 parties',
+    help: "environ 400 parties, en une seconde ou deux. Assez pour voir lequel des deux decks est favori quand l'écart est net.",
+  },
+  {
+    value: 0.03,
+    label: '± 3 pts',
+    title: 'Environ 1 000 parties',
+    help: "environ 1 000 parties, en quelques secondes. Sépare un match à 55 % d'un match à 62 %.",
+  },
+  {
+    value: 0.02,
+    label: '± 2 pts',
+    title: 'Environ 2 500 parties',
+    help: "environ 2 500 parties, de quelques secondes à une dizaine. Le bon compromis pour comparer deux versions d'un deck.",
+  },
+  {
+    value: 0.01,
+    label: '± 1 pt',
+    title: 'Environ 10 000 parties',
+    help: "environ 10 000 parties, jusqu'à une demi-minute selon les decks. Pour départager deux decks très proches ou mesurer l'effet d'une seule carte.",
+  },
 ];
 
 const IGNORED = { action: 'action : encrée seulement', item: 'objet : encré seulement', ability: 'capacités inconnues, stats jouées' };
@@ -171,6 +192,7 @@ const SimulationView = ({ onOpenSidebar, onBack, deckId = null }) => {
   });
   const [choices, setChoices] = useState(() => run?.choices ?? ['auto', 'auto']);
   const [target, setTarget] = useState(() => run?.target ?? 0.02);
+  const precision = PRECISIONS.find((x) => x.value === target) ?? PRECISIONS[2];
 
   // A deleted deck gives way to the first one
   const deckAt = (slot) => decks.find((d) => d.id === ids[slot]) ?? sorted[0] ?? null;
@@ -269,6 +291,17 @@ const SimulationView = ({ onOpenSidebar, onBack, deckId = null }) => {
                   Lancer
                 </button>
               )}
+            </div>
+            <div className="mt-3 rounded-xl bg-white/[0.02] ring-1 ring-inset ring-white/5 px-3 py-2.5 text-xs leading-relaxed text-slate-400 space-y-1">
+              <p>
+                La précision est la marge d'erreur visée sur le taux de victoire : la simulation enchaîne les parties jusqu'à ce
+                que, 19 fois sur 20, le vrai résultat du match soit dans la fourchette affichée. Plus elle est fine, plus il faut
+                de parties ; un match déséquilibré en demande moins. Elle mesure le hasard des parties, pas les limites du
+                modèle (pilotes simplifiés, effets non simulés).
+              </p>
+              <p>
+                <span className="font-medium text-white">{precision.label}</span> : {precision.help}
+              </p>
             </div>
             {run && (
               <div className="mt-4 space-y-1.5">
