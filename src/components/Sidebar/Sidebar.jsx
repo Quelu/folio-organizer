@@ -14,7 +14,6 @@ import {
   FolderSync,
   FolderOpen,
   AlertTriangle,
-  FlaskConical,
 } from 'lucide-react';
 import { motion, AnimatePresence, LayoutGroup, Reorder, useDragControls } from 'motion/react';
 import BinderItem from './BinderItem';
@@ -22,7 +21,6 @@ import CatalogStatus from './CatalogStatus';
 
 const NAV_ITEMS = [
   { kind: 'decks', label: 'Decks', icon: Layers },
-  { kind: 'simulation', label: 'Simulation', icon: FlaskConical },
   { kind: 'stats', label: 'Collection', icon: LayoutGrid },
   { kind: 'trades', label: 'Échanges', icon: ArrowLeftRight },
   { kind: 'rotation', label: 'Rotation', icon: CalendarClock },

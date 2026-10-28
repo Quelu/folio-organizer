@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Menu as MenuIcon, FlaskConical, Play, Square, ChevronDown, AlertTriangle, Loader2 } from 'lucide-react';
+import { Menu as MenuIcon, ArrowLeft, FlaskConical, Play, Square, ChevronDown, AlertTriangle, Loader2 } from 'lucide-react';
 import { Panel, Segmented } from '../Collection/CollectionParts';
 import ProgressBar from '../ui/ProgressBar';
 import SimulationResults from './SimulationResults';
@@ -151,9 +151,10 @@ const DeckSlot = ({ slot, decks, deckId, onDeck, choice, onChoice, info, lang })
 
 /**
  * Games between two decks played in the background by pilots following each deck's style, for
- * win rates with their margin of error, game lengths, lore curves and card impacts.
+ * win rates with their margin of error, game lengths, lore curves and card impacts. Opened from
+ * the decks: deckId, the deck it was opened from, goes first.
  */
-const SimulationView = ({ onOpenSidebar }) => {
+const SimulationView = ({ onOpenSidebar, onBack, deckId = null }) => {
   const { decks } = useStore();
   const { index } = useCatalog();
   const cardLang = useCardLang();
@@ -161,7 +162,13 @@ const SimulationView = ({ onOpenSidebar }) => {
   const { run, start, stop } = useSimulation();
   const sorted = useMemo(() => [...decks.filter((d) => d.kind !== 'reference'), ...decks.filter((d) => d.kind === 'reference')], [decks]);
 
-  const [ids, setIds] = useState(() => run?.ids ?? [sorted[0]?.id ?? null, sorted[1]?.id ?? sorted[0]?.id ?? null]);
+  const [ids, setIds] = useState(() => {
+    const last = run?.ids ?? [sorted[0]?.id ?? null, sorted[1]?.id ?? sorted[0]?.id ?? null];
+    if (!deckId) return last;
+    // Against the last opponent, or another deck
+    const opponent = [last[1], last[0], ...sorted.map((d) => d.id)].find((id) => id && id !== deckId) ?? deckId;
+    return [deckId, opponent];
+  });
   const [choices, setChoices] = useState(() => run?.choices ?? ['auto', 'auto']);
   const [target, setTarget] = useState(() => run?.target ?? 0.02);
 
@@ -194,15 +201,16 @@ const SimulationView = ({ onOpenSidebar }) => {
 
   const header = (
     <header className="px-4 sm:px-6 pt-4 pb-4 border-b border-white/5">
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-2">
         <button onClick={onOpenSidebar} className="btn-icon lg:hidden -ml-2 mt-0.5" aria-label="Ouvrir le menu">
           <MenuIcon size={20} />
         </button>
+        <button onClick={onBack} className="btn-icon -ml-1 mt-0.5" aria-label="Retour aux decks" title="Retour aux decks">
+          <ArrowLeft size={18} />
+        </button>
         <div className="flex-1 min-w-0">
-          <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-violet-500/15 text-violet-300 ring-1 ring-inset ring-violet-400/25">
-            Étape 2 · effets des cartes
-          </span>
-          <h1 className="text-xl sm:text-2xl font-bold text-white mt-1">Simulation</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-white">Simulation</h1>
+          <p className="text-xs text-slate-500 mt-0.5">Fais s'affronter deux decks pour estimer leurs chances l'un contre l'autre.</p>
         </div>
       </div>
     </header>
@@ -213,7 +221,7 @@ const SimulationView = ({ onOpenSidebar }) => {
       <div className="flex flex-col h-full">
         {header}
         <p className="p-6 text-sm text-slate-500">
-          {!index || !abilities ? 'Chargement du catalogue…' : "Crée ou importe un deck dans l'onglet Decks pour lancer une simulation."}
+          {!index || !abilities ? 'Chargement du catalogue…' : 'Crée ou importe un deck pour lancer une simulation.'}
         </p>
       </div>
     );
