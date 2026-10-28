@@ -15,6 +15,7 @@ import {
   Lock,
   LockOpen,
   Menu as MenuIcon,
+  FlaskConical,
 } from 'lucide-react';
 import Menu from '../ui/Menu';
 import CardThumb from '../ui/CardThumb';
@@ -36,6 +37,7 @@ import { getInk, getMainType, CARD_TYPES, FORMATS } from '../../utils/catalog';
 import { useCardLang } from '../../hooks/useCardLang';
 import { useCopyAllocation } from '../../hooks/useCopyAllocation';
 import { useDeckColor } from '../../hooks/useDeckColor';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { useToast } from '../ui/toastContext';
 import SharedCardsPanel from './SharedCardsPanel';
 import { DeckTagPicker } from './DeckTags';
@@ -120,6 +122,8 @@ const DeckEditor = ({ deck, onBack, onOpenSidebar, onLocate, onDelete }) => {
   const collection = useCollection();
   const [tab, setTab] = useState('list');
   const [imageOpen, setImageOpen] = useState(false);
+  // On a phone the deck's name needs the room: "Simuler" goes in the menu
+  const wide = useMediaQuery('(min-width: 640px)');
   const cardLang = useCardLang();
   const allocation = useCopyAllocation();
   const analysis = useMemo(
@@ -194,6 +198,16 @@ const DeckEditor = ({ deck, onBack, onOpenSidebar, onLocate, onDelete }) => {
                 aria-label="Nom du deck"
               />
             </div>
+            {wide && (
+              <button
+                onClick={() => setView({ kind: 'decks', simulate: true, from: deck.id })}
+                className="btn-secondary px-3 py-2 mt-0.5"
+                title="Faire affronter un autre deck à ce deck"
+              >
+                <FlaskConical size={15} className="text-violet-300" />
+                Simuler
+              </button>
+            )}
             <button
               onClick={() => setView({ kind: 'assistant', deckId: deck.id })}
               className="btn-secondary px-3 py-2 mt-0.5"
@@ -210,6 +224,13 @@ const DeckEditor = ({ deck, onBack, onOpenSidebar, onLocate, onDelete }) => {
                 </span>
               }
               items={[
+                wide
+                  ? null
+                  : {
+                      label: 'Simuler contre un autre deck',
+                      icon: FlaskConical,
+                      onClick: () => setView({ kind: 'decks', simulate: true, from: deck.id }),
+                    },
                 {
                   label: deck.kind === 'reference' ? 'Passer dans mes decks' : 'Passer en référence',
                   icon: deck.kind === 'reference' ? Layers : BookMarked,

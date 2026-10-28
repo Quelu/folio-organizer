@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, ClipboardPaste, AlertTriangle, AlertCircle, CheckCircle2, Layers, BookMarked, Menu as MenuIcon, Loader2, Split, ChevronRight, ChevronDown, CalendarClock, Lock, Tag, Settings2 } from 'lucide-react';
+import { Plus, ClipboardPaste, AlertTriangle, AlertCircle, CheckCircle2, Layers, BookMarked, Menu as MenuIcon, Loader2, Split, ChevronRight, ChevronDown, CalendarClock, Lock, Tag, Settings2, FlaskConical } from 'lucide-react';
 import ProgressBar from '../ui/ProgressBar';
 import ConfirmDialog from '../ui/ConfirmDialog';
 import DeckEditor from './DeckEditor';
 import DeckImportModal from './DeckImportModal';
+import SimulationView from '../Simulation/SimulationView';
 import { useStore } from '../../hooks/storeContext';
 import { useCatalog } from '../../hooks/catalogContext';
 import { useCardLang } from '../../hooks/useCardLang';
@@ -134,7 +135,7 @@ const AlertDeckRows = ({ rows, onOpenDeck }) => (
   </div>
 );
 
-/** Deck list (yours and the reference decks the AI learns from), or one deck's editor. */
+/** Deck list (yours and the reference decks the AI learns from), one deck's editor, or a simulation between two decks. */
 const DecksView = ({ onOpenSidebar, onLocate }) => {
   const notify = useToast();
   const { decks, deckTags, view, setView, createDeck, deleteDeck, restoreDeck } = useStore();
@@ -239,6 +240,17 @@ const DecksView = ({ onOpenSidebar, onLocate }) => {
     />
   );
 
+  // A simulation opened from the list, or from a deck it then goes back to
+  if (view.simulate) {
+    return (
+      <SimulationView
+        onOpenSidebar={onOpenSidebar}
+        deckId={view.from ?? null}
+        onBack={() => setView(view.from ? { kind: 'decks', deckId: view.from } : { kind: 'decks' })}
+      />
+    );
+  }
+
   if (openDeck) {
     return (
       <>
@@ -266,6 +278,16 @@ const DecksView = ({ onOpenSidebar, onLocate }) => {
             <h1 className="text-xl sm:text-2xl font-bold text-white">Decks</h1>
             <p className="text-xs text-slate-500 mt-0.5">Construis avec ta collection, sors les cartes des fardes, teste tes mains.</p>
           </div>
+          {decks.length > 0 && (
+            <button
+              onClick={() => setView({ kind: 'decks', simulate: true })}
+              className="btn-secondary px-3 py-2"
+              title="Faire s'affronter deux decks"
+            >
+              <FlaskConical size={15} className="text-violet-300" />
+              <span className="hidden sm:inline">Simuler</span>
+            </button>
+          )}
           <button onClick={() => setImportOpen(true)} className="btn-secondary px-3 py-2">
             <ClipboardPaste size={15} />
             <span className="hidden sm:inline">Importer une liste</span>
