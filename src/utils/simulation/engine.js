@@ -51,8 +51,14 @@ export const shuffleInPlace = (game, array) => {
   return array;
 };
 
-export const say = (game, p, text) => {
-  if (game.log) game.log.push({ round: Math.ceil(game.turn / 2), player: p, text });
+/**
+ * A line of the game's log: kind tells what it is ('ink', 'play', 'quest', 'challenge', 'effect'...),
+ * cards the cards in play or played it is about, kept by id so a replay finds them on its board.
+ */
+export const say = (game, p, text, kind = null, cards = []) => {
+  if (game.log) {
+    game.log.push({ turn: game.turn, round: Math.ceil(game.turn / 2), player: p, text, kind, cards: cards.filter(Boolean).map((c) => c.id) });
+  }
 };
 
 const end = (game, winner, reason) => {
@@ -60,7 +66,7 @@ const end = (game, winner, reason) => {
   game.over = true;
   game.winner = winner;
   game.reason = reason;
-  say(game, winner, reason === 'lore' ? `atteint ${LORE_TO_WIN} lore et gagne` : "gagne : l'adversaire n'a plus de cartes à piocher");
+  say(game, winner, reason === 'lore' ? `atteint ${LORE_TO_WIN} lore et gagne` : "gagne : l'adversaire n'a plus de cartes à piocher", 'win');
 };
 
 export const cardOf = (game, p, idx) => game.players[p].deck.cards[idx];
@@ -429,7 +435,7 @@ export const enterPlay = (game, p, idx, { exerted = false, base = null, cost = n
     me.turnStats.discarded++;
     const ref = { id: nextId++, idx, owner: p, card, zone: 'discard', damage: 0, exerted: false, mods: [] };
     me.turnStats.played.push(ref);
-    say(game, p, `joue ${card.name}${cost != null ? ` (${cost})` : ''}`);
+    say(game, p, `joue ${card.name}${cost != null ? ` (${cost})` : ''}`, 'play', [ref]);
     if (card.abilities?.action) resolveAbility(game, { p, source: ref, ability: card.abilities.action });
     if (afterPlay === 'bottom-of-deck' && me.discard.lastIndexOf(idx) >= 0) {
       me.discard.splice(me.discard.lastIndexOf(idx), 1);
@@ -445,7 +451,7 @@ export const enterPlay = (game, p, idx, { exerted = false, base = null, cost = n
     me.characters.splice(me.characters.indexOf(base), 1, inst);
     game.boardVersion++;
     base.zone = 'under';
-    say(game, p, `joue ${card.name} avec Alter sur ${base.card.name}${cost != null ? ` (${cost})` : ''}`);
+    say(game, p, `joue ${card.name} avec Alter sur ${base.card.name}${cost != null ? ` (${cost})` : ''}`, 'play', [inst]);
   } else {
     const entersExerted = exerted || isEnteringExerted(game, p, card);
     inst = {
@@ -467,7 +473,7 @@ export const enterPlay = (game, p, idx, { exerted = false, base = null, cost = n
     boardOf(game, inst).push(inst);
     game.boardVersion++;
     const kind = card.kind === 'location' ? 'le lieu ' : card.kind === 'item' ? "l'objet " : '';
-    say(game, p, `joue ${kind}${card.name}${cost != null ? ` (${cost})` : ''}${entersExerted ? ', épuisé' : ''}`);
+    say(game, p, `joue ${kind}${card.name}${cost != null ? ` (${cost})` : ''}${entersExerted ? ', épuisé' : ''}`, 'play', [inst]);
   }
   me.turnStats.played.push(inst);
   emit(game, 'play', { p, subject: inst, shifted: !!base });
@@ -525,7 +531,7 @@ export const inkCard = (game, p, pos) => {
   me.inkwell++;
   me.ink++;
   me.inkedThisTurn = true;
-  say(game, p, `encre ${card.name}`);
+  say(game, p, `encre ${card.name}`, 'ink');
   emit(game, 'ink', { p, subject: null });
   return true;
 };
@@ -554,7 +560,7 @@ export const playCard = (game, p, pos, { base = null, exerted = false, singers =
   if (singers) {
     for (const s of singers) s.exerted = true;
     me.turnStats.songs++;
-    say(game, p, `${singers.map((s) => s.card.name).join(' et ')} ${singers.length > 1 ? 'chantent' : 'chante'} ${card.name}`);
+    say(game, p, `${singers.map((s) => s.card.name).join(' et ')} ${singers.length > 1 ? 'chantent' : 'chante'} ${card.name}`, 'sing', singers);
   }
   if (card.kind === 'action') me.turnStats.actions++;
   const inst = enterPlay(game, p, idx, { exerted, base, cost: singers ? null : cost });
@@ -589,9 +595,9 @@ export const quest = (game, p, inst, support = null) => {
   if (support && keywordOf(game, inst, 'Support')) {
     const strength = strengthOf(game, inst);
     support.bonus += strength;
-    say(game, p, `part en quête avec ${inst.card.name} (+${lore}) et donne ${strength} de force à ${support.card.name}`);
+    say(game, p, `part en quête avec ${inst.card.name} (+${lore}) et donne ${strength} de force à ${support.card.name}`, 'quest', [inst, support]);
   } else {
-    say(game, p, `part en quête avec ${inst.card.name} (+${lore} → ${me.lore + lore})`);
+    say(game, p, `part en quête avec ${inst.card.name} (+${lore} → ${me.lore + lore})`, 'quest', [inst]);
   }
   gainLore(game, p, lore);
   emit(game, 'quest', { p, subject: inst });
@@ -632,7 +638,9 @@ export const challenge = (game, p, attacker, target) => {
   say(
     game,
     p,
-    `défie ${target.card.name} avec ${attacker.card.name} (${landedOnTarget} dégât${landedOnTarget > 1 ? 's' : ''} infligé${landedOnTarget > 1 ? 's' : ''}, ${landedOnAttacker} subi${landedOnAttacker > 1 ? 's' : ''})${outcome.length ? ` : ${outcome.join(', ')}` : ''}`
+    `défie ${target.card.name} avec ${attacker.card.name} (${landedOnTarget} dégât${landedOnTarget > 1 ? 's' : ''} infligé${landedOnTarget > 1 ? 's' : ''}, ${landedOnAttacker} subi${landedOnAttacker > 1 ? 's' : ''})${outcome.length ? ` : ${outcome.join(', ')}` : ''}`,
+    'challenge',
+    [attacker, target]
   );
   if (banishes) {
     banish(game, target, { inChallenge: true, by: attacker });
@@ -677,7 +685,7 @@ export const activate = (game, p, inst, ability) => {
   }
   if (inst.used?.turn !== game.turn) inst.used = { turn: game.turn, list: [] };
   inst.used.list.push(ability);
-  say(game, p, `utilise ${ability.name ? `${ability.name} (${inst.card.name})` : inst.card.name}`);
+  say(game, p, `utilise ${ability.name ? `${ability.name} (${inst.card.name})` : inst.card.name}`, 'activate', [inst]);
   if (cost.banishSelf) banish(game, inst);
   resolveAbility(game, { p, source: inst, ability, activated: true });
   if (cost.exert && inst.zone === 'play') emit(game, 'exert', { p, subject: inst });
@@ -715,7 +723,7 @@ export const moveCharacter = (game, p, char, loc, { free = false } = {}) => {
   if (!canMove(game, p, char, loc, { free })) return false;
   if (!free) game.players[p].ink -= moveCostOf(game, loc, char);
   char.at = loc;
-  say(game, p, `déplace ${char.card.name} vers ${loc.card.name}`);
+  say(game, p, `déplace ${char.card.name} vers ${loc.card.name}`, 'move', [char, loc]);
   emit(game, 'move', { p, subject: char, location: loc });
   return true;
 };
@@ -734,7 +742,7 @@ export const boost = (game, p, inst) => {
   const me = game.players[p];
   me.ink -= inst.card.keywords.Boost;
   inst.boostTurn = game.turn;
-  say(game, p, `Boost ${inst.card.name} : une carte sous lui`);
+  say(game, p, `Boost ${inst.card.name} : une carte sous lui`, 'boost', [inst]);
   putUnder(game, inst, me.library.shift());
   emit(game, 'boost', { p, subject: inst });
   return true;
@@ -789,7 +797,7 @@ const openHand = (game, p, pilot) => {
     me.hand.push(...me.library.splice(0, returned.length));
     shuffleInPlace(game, me.library);
     me.mulligan = returned.length;
-    say(game, p, `remet ${returned.length} carte${returned.length > 1 ? 's' : ''} (mulligan)`);
+    say(game, p, `remet ${returned.length} carte${returned.length > 1 ? 's' : ''} (mulligan)`, 'mulligan');
   }
   for (const idx of me.hand) me.seen[idx] = 1;
 };
@@ -805,6 +813,45 @@ const expire = (game, turn) => {
       inst.mods = kept;
     }
   }
+};
+
+/**
+ * The board at the end of a turn, for a replay: per player their lore, ink, hand, deck and
+ * discard, the cards in play with what they are now, the cards played this turn and the ones that
+ * left play since the last snapshot (zone: where they went). A card keeps its id from turn to
+ * turn, through Shift too. previous: the cards in play at the last snapshot.
+ */
+const snapshotOf = (game, previous) => {
+  const now = new Set(inPlay(game).map((inst) => inst.id));
+  // The latest object of each card: Shift replaces it, a card can come and go within the turn
+  const known = new Map(previous.map((inst) => [inst.id, inst]));
+  for (const pl of game.players) for (const inst of pl.turnStats.played) if (inst.card.kind !== 'action') known.set(inst.id, inst);
+  const left = [...known.values()].filter((inst) => !now.has(inst.id));
+  return {
+    turn: game.turn,
+    current: game.current,
+    players: game.players.map((pl, p) => ({
+      lore: pl.lore,
+      inkwell: pl.inkwell,
+      ink: pl.ink,
+      hand: pl.hand.slice(),
+      library: pl.library.length,
+      discard: pl.discard.length,
+      played: pl.turnStats.played.map((inst) => ({ id: inst.id, idx: inst.idx })),
+      cards: [...pl.locations, ...pl.characters, ...pl.items].map((inst) => ({
+        id: inst.id,
+        idx: inst.idx,
+        damage: inst.damage,
+        exerted: inst.exerted,
+        strength: statOf(game, inst, 'strength'),
+        willpower: statOf(game, inst, 'willpower'),
+        lore: statOf(game, inst, 'lore'),
+        at: inst.at?.id ?? null,
+        under: inst.under.length,
+      })),
+      left: left.filter((inst) => inst.owner === p).map((inst) => ({ id: inst.id, idx: inst.idx, zone: inst.zone })),
+    })),
+  };
 };
 
 /** A copy of the game a pilot can play ahead in: no log, no card statistics, its own random numbers. */
@@ -845,13 +892,15 @@ export const cloneGame = (game) => {
 /**
  * Plays one game between two prepared decks (deck.js).
  * @param {object[]} decks the two decks
- * @param {{ seed: number, first?: 0|1, pilots: object[], log?: object[] }} options first: the
- *   player who starts (and skips their first draw); log: filled with { round, player, text }
+ * @param {{ seed: number, first?: 0|1, pilots: object[], log?: object[], snapshots?: object[] }}
+ *   options first: the player who starts (and skips their first draw); log: filled with { turn,
+ *   round, player, text, kind, cards } (see say); snapshots: filled with the board once the hands
+ *   are kept, then at the end of each turn (see snapshotOf)
  * @returns {{ winner: 0|1|null, reason: 'lore'|'deckout'|'timeout', turns: number, first: number,
  *   lore: number[][], seen: Uint8Array[], mulligans: number[] }} lore[p]: lore at the end of each
  *   of p's turns
  */
-export const playGame = (decks, { seed, first = 0, pilots, log = null }) => {
+export const playGame = (decks, { seed, first = 0, pilots, log = null, snapshots = null }) => {
   const game = {
     turn: 0,
     first,
@@ -874,6 +923,12 @@ export const playGame = (decks, { seed, first = 0, pilots, log = null }) => {
   game.players = decks.map((deck) => createPlayer(game, deck));
   openHand(game, first, pilots[first]);
   openHand(game, 1 - first, pilots[1 - first]);
+  let board = [];
+  const snapshot = () => {
+    snapshots.push(snapshotOf(game, board));
+    board = inPlay(game);
+  };
+  if (snapshots) snapshot();
 
   let p = first;
   while (!game.over && game.turn < MAX_TURNS) {
@@ -898,6 +953,7 @@ export const playGame = (decks, { seed, first = 0, pilots, log = null }) => {
     for (const c of me.characters) c.bonus = 0;
     expire(game, game.turn);
     me.loreByTurn.push(me.lore);
+    if (snapshots) snapshot();
     p = 1 - p;
   }
   if (!game.over) game.reason = 'timeout';

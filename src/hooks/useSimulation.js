@@ -85,9 +85,10 @@ export const useSimulation = () => {
   return { run, start, stop };
 };
 
-/** Game n of a run played again, with its log: { result, log } (see playGame). */
+/** Game n of a run played again, with its log and its board turn by turn: { result, log, snapshots } (see playGame). */
 export const replayGame = (run, n) => {
   const log = [];
-  const result = playGame(run.decks, { seed: gameSeed(run.seed, n), first: n % 2, pilots: run.styles.map(createPilot), log });
-  return { result, log };
+  const snapshots = [];
+  const result = playGame(run.decks, { seed: gameSeed(run.seed, n), first: n % 2, pilots: run.styles.map(createPilot), log, snapshots });
+  return { result, log, snapshots };
 };

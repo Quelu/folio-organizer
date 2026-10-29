@@ -448,7 +448,7 @@ const targetsOf = (game, ctx, effect, target = effect.target) => {
       cards = candidates.length ? chooseCards(game, chooser, ctx, effect, candidates, min, max) : [];
       if (ctx.source.card.kind === 'action') {
         for (const inst of cards.filter((c) => c.owner !== chooser && keywordOf(game, c, 'Vanish') > 0)) {
-          say(game, inst.owner, `${inst.card.name} disparaît (Dissipation)`);
+          say(game, inst.owner, `${inst.card.name} disparaît (Dissipation)`, 'effect', [inst]);
           banish(game, inst);
         }
         cards = cards.filter((c) => c.zone === 'play');
@@ -636,7 +636,8 @@ const holds = (game, ctx, c) => CONDITIONS[c.type].test(game, ctx, c);
 // ---------- Effects ----------
 
 const label = (ctx) => (ctx.ability?.name ? `${ctx.source.card.name} · ${ctx.ability.name}` : ctx.source.card.name);
-const tell = (game, ctx, text) => say(game, ctx.p, `${label(ctx)} : ${text}`);
+// cards: the cards in play it acts on, besides its source
+const tell = (game, ctx, text, cards = []) => say(game, ctx.p, `${label(ctx)} : ${text}`, 'effect', [ctx.source, ...cards]);
 const names = (cards) => cards.map((c) => c.card.name).join(', ');
 const plural = (n, word) => `${n} ${word}${n > 1 ? 's' : ''}`;
 
@@ -781,7 +782,7 @@ const EFFECTS = {
     run: (game, ctx, e) => {
       for (const q of playersOf(game, ctx, e.target, e)) {
         const n = drawCards(game, q, amountOf(game, ctx, e.amount ?? 1), { bottom: e.source === 'deck-bottom' });
-        if (n) say(game, q, `${label(ctx)} : pioche ${plural(n, 'carte')}`);
+        if (n) say(game, q, `${label(ctx)} : pioche ${plural(n, 'carte')}`, 'effect', [ctx.source]);
         ctx.did = n > 0;
       }
     },
@@ -792,7 +793,7 @@ const EFFECTS = {
     run: (game, ctx, e) => {
       for (const q of playersOf(game, ctx, e.target, e)) {
         const n = drawCards(game, q, Math.max(0, e.size - game.players[q].hand.length));
-        if (n) say(game, q, `${label(ctx)} : pioche ${plural(n, 'carte')}`);
+        if (n) say(game, q, `${label(ctx)} : pioche ${plural(n, 'carte')}`, 'effect', [ctx.source]);
       }
     },
   },
@@ -802,7 +803,7 @@ const EFFECTS = {
     run: (game, ctx, e) => {
       const n = amountOf(game, ctx, e.amount);
       for (const q of playersOf(game, ctx, e.target, e)) {
-        say(game, q, `${label(ctx)} : gagne ${n} lore (→ ${game.players[q].lore + n})`);
+        say(game, q, `${label(ctx)} : gagne ${n} lore (→ ${game.players[q].lore + n})`, 'effect', [ctx.source]);
         gainLore(game, q, n);
       }
       ctx.did = n > 0;
@@ -815,7 +816,7 @@ const EFFECTS = {
       const n = amountOf(game, ctx, e.amount);
       ctx.loreLost = 0;
       for (const q of playersOf(game, ctx, e.target, e)) {
-        say(game, q, `${label(ctx)} : perd ${n} lore`);
+        say(game, q, `${label(ctx)} : perd ${n} lore`, 'effect', [ctx.source]);
         ctx.loreLost += Math.min(n, game.players[q].lore);
         loseLore(game, q, n);
       }
@@ -827,7 +828,7 @@ const EFFECTS = {
     check: (e) => okCards(e.target) && [undefined, 'opponent'].includes(e.chosenBy),
     run: (game, ctx, e) => {
       const cards = targetsOf(game, ctx, e).filter((c) => c.zone === 'play');
-      if (cards.length) tell(game, ctx, `bannit ${names(cards)}`);
+      if (cards.length) tell(game, ctx, `bannit ${names(cards)}`, cards);
       for (const c of cards) banish(game, c);
       ctx.did = cards.length > 0;
     },
@@ -838,7 +839,7 @@ const EFFECTS = {
     run: (game, ctx, e) => {
       const n = amountOf(game, ctx, e.amount);
       const cards = targetsOf(game, ctx, e);
-      if (cards.length) tell(game, ctx, `inflige ${plural(n, 'dégât')} à ${names(cards)}`);
+      if (cards.length) tell(game, ctx, `inflige ${plural(n, 'dégât')} à ${names(cards)}`, cards);
       let landed = 0;
       for (const c of cards) landed += damageCard(game, c, n, { ignoreResist: !!e.ignoreResist, by: ctx.source });
       ctx.did = landed > 0;
@@ -850,7 +851,7 @@ const EFFECTS = {
     run: (game, ctx, e) => {
       const n = amountOf(game, ctx, e.amount);
       const cards = targetsOf(game, ctx, e);
-      if (cards.length) tell(game, ctx, `place ${plural(n, 'dégât')} sur ${names(cards)}`);
+      if (cards.length) tell(game, ctx, `place ${plural(n, 'dégât')} sur ${names(cards)}`, cards);
       for (const c of cards) damageCard(game, c, n, { put: true });
       ctx.did = cards.length > 0;
     },
@@ -868,7 +869,7 @@ const EFFECTS = {
         removed += r;
         game.players[ctx.p].turnStats.damageRemoved += r;
         ctx.removed = (ctx.removed ?? 0) + r;
-        tell(game, ctx, `retire ${plural(r, 'dégât')} à ${c.card.name}`);
+        tell(game, ctx, `retire ${plural(r, 'dégât')} à ${c.card.name}`, [c]);
         emit(game, 'remove-damage', { p: c.owner, subject: c, amount: r, by: ctx.p });
       }
       ctx.did = removed > 0;
@@ -884,7 +885,7 @@ const EFFECTS = {
       const [to] = targetsOf(game, ctx, { ...e, type: 'put-damage' }, e.to);
       if (!to || !n) return;
       from.damage -= n;
-      tell(game, ctx, `déplace ${plural(n, 'dégât')} de ${from.card.name} vers ${to.card.name}`);
+      tell(game, ctx, `déplace ${plural(n, 'dégât')} de ${from.card.name} vers ${to.card.name}`, [from, to]);
       damageCard(game, to, n, { put: true });
       ctx.did = true;
     },
@@ -894,7 +895,7 @@ const EFFECTS = {
     check: (e) => okCards(e.target, { inDiscard: true }) && [undefined, 'opponent'].includes(e.chosenBy),
     run: (game, ctx, e) => {
       const cards = targetsOf(game, ctx, e).filter((c) => returnToHand(game, c));
-      if (cards.length) tell(game, ctx, `renvoie ${names(cards)} dans la main`);
+      if (cards.length) tell(game, ctx, `renvoie ${names(cards)} dans la main`, cards);
       ctx.did = cards.length > 0;
     },
   },
@@ -903,7 +904,7 @@ const EFFECTS = {
     check: (e) => okCards(e.target, { inDiscard: true }) && [undefined, 'opponent'].includes(e.chosenBy),
     run: (game, ctx, e) => {
       const cards = targetsOf(game, ctx, e).filter((c) => putIntoDeck(game, c, 'bottom'));
-      if (cards.length) tell(game, ctx, `met ${names(cards)} sous la pioche`);
+      if (cards.length) tell(game, ctx, `met ${names(cards)} sous la pioche`, cards);
       ctx.did = cards.length > 0;
     },
   },
@@ -912,7 +913,7 @@ const EFFECTS = {
     check: (e) => okCards(e.target, { inDiscard: true }) && [undefined, 'opponent'].includes(e.chosenBy),
     run: (game, ctx, e) => {
       const cards = targetsOf(game, ctx, e).filter((c) => putIntoDeck(game, c, 'top'));
-      if (cards.length) tell(game, ctx, `met ${names(cards)} sur la pioche`);
+      if (cards.length) tell(game, ctx, `met ${names(cards)} sur la pioche`, cards);
       ctx.did = cards.length > 0;
     },
   },
@@ -921,7 +922,7 @@ const EFFECTS = {
     check: (e) => okCards(e.target, { inDiscard: true }) && (e.intoDeck == null || e.intoDeck === 'owner'),
     run: (game, ctx, e) => {
       const cards = targetsOf(game, ctx, e).filter((c) => putIntoDeck(game, c, 'shuffle'));
-      if (cards.length) tell(game, ctx, `mélange ${names(cards)} dans la pioche`);
+      if (cards.length) tell(game, ctx, `mélange ${names(cards)} dans la pioche`, cards);
       ctx.did = cards.length > 0;
     },
   },
@@ -936,7 +937,7 @@ const EFFECTS = {
       }
       const cards = targetsOf(game, ctx, e).filter((c) => c.zone === 'play' && c.exerted);
       for (const c of cards) c.exerted = false;
-      if (cards.length) tell(game, ctx, `redresse ${names(cards)}`);
+      if (cards.length) tell(game, ctx, `redresse ${names(cards)}`, cards);
       ctx.did = cards.length > 0;
     },
   },
@@ -950,7 +951,7 @@ const EFFECTS = {
       }
       const cards = targetsOf(game, ctx, e).filter((c) => c.zone === 'play' && !c.exerted);
       for (const c of cards) c.exerted = true;
-      if (cards.length) tell(game, ctx, `épuise ${names(cards)}`);
+      if (cards.length) tell(game, ctx, `épuise ${names(cards)}`, cards);
       ctx.did = cards.length > 0;
     },
   },
@@ -961,7 +962,7 @@ const EFFECTS = {
       const amount = amountOf(game, ctx, e.modifier);
       const cards = targetsOf(game, ctx, e).filter((c) => c.zone === 'play');
       for (const c of cards) addMod(c, { kind: 'stat', stat: e.stat, amount, until: untilOf(game, ctx, e.duration, c.owner) });
-      if (cards.length) tell(game, ctx, `${names(cards)} : ${signed(amount)} ${STAT_NAMES[e.stat]}`);
+      if (cards.length) tell(game, ctx, `${names(cards)} : ${signed(amount)} ${STAT_NAMES[e.stat]}`, cards);
       ctx.did = cards.length > 0;
     },
   },
@@ -972,7 +973,7 @@ const EFFECTS = {
       const cards = targetsOf(game, ctx, e).filter((c) => c.zone === 'play');
       const value = e.value == null ? 1 : amountOf(game, ctx, e.value);
       for (const c of cards) addMod(c, { kind: 'keyword', keyword: e.keyword, value, until: untilOf(game, ctx, e.duration, c.owner) });
-      if (cards.length) tell(game, ctx, `${names(cards)} gagne ${e.keyword}${e.value ? ` +${e.value}` : ''}`);
+      if (cards.length) tell(game, ctx, `${names(cards)} gagne ${e.keyword}${e.value ? ` +${e.value}` : ''}`, cards);
       ctx.did = cards.length > 0;
     },
   },
@@ -984,7 +985,7 @@ const EFFECTS = {
       for (const c of cards) {
         for (const k of e.keywords) addMod(c, { kind: 'keyword', keyword: k.keyword, value: k.value ?? 1, until: untilOf(game, ctx, e.duration, c.owner) });
       }
-      if (cards.length) tell(game, ctx, `${names(cards)} gagne ${e.keywords.map((k) => k.keyword).join(', ')}`);
+      if (cards.length) tell(game, ctx, `${names(cards)} gagne ${e.keywords.map((k) => k.keyword).join(', ')}`, cards);
       ctx.did = cards.length > 0;
     },
   },
@@ -1013,7 +1014,7 @@ const EFFECTS = {
       }
       const cards = targetsOf(game, ctx, e).filter((c) => c.zone === 'play');
       for (const c of cards) addMod(c, { kind: 'restriction', restriction: e.restriction, until: untilOf(game, ctx, e.duration, c.owner) });
-      if (cards.length && RESTRICTION_TEXT[e.restriction]) tell(game, ctx, `${names(cards)} ${RESTRICTION_TEXT[e.restriction]}`);
+      if (cards.length && RESTRICTION_TEXT[e.restriction]) tell(game, ctx, `${names(cards)} ${RESTRICTION_TEXT[e.restriction]}`, cards);
       ctx.did = cards.length > 0;
     },
   },
@@ -1060,7 +1061,7 @@ const EFFECTS = {
         const discarded = picked
           .sort((a, b) => b - a)
           .map((pos) => cardOf(game, q, discardFromHand(game, q, pos)).name);
-        say(game, q, `${label(ctx)} : défausse ${discarded.join(', ')}`);
+        say(game, q, `${label(ctx)} : défausse ${discarded.join(', ')}`, 'effect', [ctx.source]);
         any = true;
       }
       ctx.did = any;
@@ -1111,7 +1112,7 @@ const EFFECTS = {
       // "Put this card into your inkwell", a card chosen in play or in a discard
       const target = SELF_TARGETS.has(e.source) ? 'SELF' : typeof e.source === 'object' ? e.source : e.target;
       const cards = targetsOf(game, ctx, e, target).filter((c) => putIntoInkwell(game, c, { exerted }));
-      if (cards.length) tell(game, ctx, `met ${names(cards)} dans l'encrier`);
+      if (cards.length) tell(game, ctx, `met ${names(cards)} dans l'encrier`, cards);
       ctx.did = cards.length > 0;
     },
   },
@@ -1266,7 +1267,7 @@ const EFFECTS = {
       const me = game.players[ctx.p];
       const [inst] = targetsOf(game, ctx, { ...e, type: 'put-under' }, e.under).filter((c) => c.zone === 'play');
       if (!inst || !me.library.length) return void (ctx.did = false);
-      tell(game, ctx, `place une carte sous ${inst.card.name}`);
+      tell(game, ctx, `place une carte sous ${inst.card.name}`, [inst]);
       putUnder(game, inst, me.library.shift());
       ctx.did = true;
     },
