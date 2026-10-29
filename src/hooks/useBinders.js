@@ -19,6 +19,8 @@ const DEFAULT_STATE = {
   pulls: [],
   // Copies of a card several decks share, assigned to one of them: { [cardKey]: { [deckId]: qty } }
   allocations: {},
+  // Decks built one at a time (variants of one deck), counted once in the want list: { id, deckIds }
+  deckGroups: [],
   // Collections other players shared to trade with them (see utils/tradeShare.js), plus importedAt
   // and the trade validated with them, if any: { rule, validatedAt, receive, give, found }
   partners: [],
@@ -36,6 +38,10 @@ const DEFAULT_STATE = {
     traderName: '',
     // Language of card names, texts and pictures: 'fr' or 'en'
     cardLanguage: 'fr',
+    // Want list: the Epic / Enchanted / Iconic pockets of the binders too
+    wantSpecials: false,
+    // Deck group suggestions turned down, by signature (see getDeckSetSignature)
+    dismissedDeckGroups: [],
   },
 };
 
@@ -395,6 +401,26 @@ export const useBinders = () => {
     });
   }, []);
 
+  /** Counts decks as one built at a time: they leave their other groups for this one. Returns its id. */
+  const groupDecks = useCallback((deckIds) => {
+    const id = crypto.randomUUID();
+    setState((prev) => ({
+      ...prev,
+      deckGroups: [
+        ...prev.deckGroups
+          .map((g) => ({ ...g, deckIds: g.deckIds.filter((d) => !deckIds.includes(d)) }))
+          .filter((g) => g.deckIds.length > 1),
+        { id, deckIds },
+      ],
+    }));
+    return id;
+  }, []);
+
+  /** Splits a deck group: its decks are counted separately again. */
+  const ungroupDecks = useCallback((groupId) => {
+    setState((prev) => ({ ...prev, deckGroups: prev.deckGroups.filter((g) => g.id !== groupId) }));
+  }, []);
+
   const duplicateDeck = useCallback((deckId) => {
     const source = stateRef.current.decks.find((d) => d.id === deckId);
     if (!source) return null;
@@ -601,6 +627,7 @@ export const useBinders = () => {
     deckTags: state.deckTags,
     pulls: state.pulls,
     allocations: state.allocations,
+    deckGroups: state.deckGroups,
     partners: state.partners,
     setPartnerTrade,
     completePartnerTrade,
@@ -634,6 +661,8 @@ export const useBinders = () => {
     pullCards,
     returnCards,
     setAllocation,
+    groupDecks,
+    ungroupDecks,
     createDeckTag,
     updateDeckTag,
     deleteDeckTag,

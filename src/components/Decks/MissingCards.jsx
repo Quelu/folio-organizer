@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeftRight, ExternalLink } from 'lucide-react';
+import { ArrowLeftRight, ExternalLink, Heart } from 'lucide-react';
 import CardThumb from '../ui/CardThumb';
 import CopyButton from '../ui/CopyButton';
 import Modal from '../ui/Modal';
@@ -9,20 +9,23 @@ import { usePrices } from '../../hooks/usePrices';
 import { getMainPrinting } from '../../utils/catalog';
 import { getDeckWantsLines } from '../../utils/cardmarketExport';
 import { useCardLang } from '../../hooks/useCardLang';
+import { useOpenWantList } from '../../hooks/useOpenWantList';
 
 const CARDMARKET_WANTS_URL = 'https://www.cardmarket.com/fr/Lorcana/Wants';
 
 /**
  * Cards a deck needs beyond the collection: estimated price, Cardmarket wants list and
  * equal-value trade ideas for each card.
- * @param {{ entries: { key, name, missing, card }[] }} props missing entries of analyzeDeck
+ * @param {{ entries: { key, name, missing, card }[], deckId?: string }} props missing entries of
+ *   analyzeDeck; deckId: a saved deck, linked to its place in the want list
  */
-const MissingCards = ({ entries }) => {
+const MissingCards = ({ entries, deckId = null }) => {
   const { index } = useCatalog();
   const prices = usePrices();
   const cardLang = useCardLang();
   const [withExpansion, setWithExpansion] = useState(true);
   const [tradeCard, setTradeCard] = useState(null);
+  const openWantList = useOpenWantList();
 
   if (entries.length === 0) {
     return <p className="text-sm text-emerald-300">Tu as toutes les cartes de ce deck 🎉</p>;
@@ -53,7 +56,14 @@ const MissingCards = ({ entries }) => {
           environ <b className="text-white">{prices.format(total)}</b>
           {unpriced > 0 && <span className="text-slate-500"> (+ {unpriced} sans prix)</span>}
         </p>
-        <span className="text-[11px] text-slate-500">Prix : {prices.source}</span>
+        <span className="flex items-center gap-3 text-[11px] text-slate-500">
+          {deckId && (
+            <button onClick={() => openWantList({ decks: [deckId] })} className="flex items-center gap-1 text-indigo-300 hover:text-white font-semibold">
+              <Heart size={12} /> Voir dans la want list
+            </button>
+          )}
+          Prix : {prices.source}
+        </span>
       </div>
 
       <div data-preview-group className="space-y-1">

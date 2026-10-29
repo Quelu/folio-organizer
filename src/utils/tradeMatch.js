@@ -1,6 +1,5 @@
 import { SPECIAL_RARITIES, baseNumber } from './catalog.js';
-import { analyzeDeck } from './deckRules.js';
-import { getBinderMissing } from './trades.js';
+import { getWantList } from './wantList.js';
 import { LORCANA_RARITIES } from '../data/games.js';
 
 /**
@@ -107,35 +106,25 @@ export const getTradeClassLabel = (tradeClass) => {
 const pocketOf = (card) => `${card.set}-${baseNumber(card.number)}`;
 
 /**
- * Cards the user looks for: the empty pockets of the given binders (printings owned nowhere
- * else), and the copies their decks miss.
+ * Cards the user looks for: the want list of the given binders and decks (see getWantList), the
+ * empty pockets one by one and the copies the decks miss, one want per card.
  * @param {{ binders: object[], decks: object[], index: object, collection: object,
- *   availableFor?: Function, specials?: boolean }} options decks: the ones to take into account
+ *   groups?: object[], allocations?: object, specials?: boolean }} options decks: the ones to take into account
  * @returns {object[]} wants
  */
-export const getWants = ({ binders, decks, index, collection, availableFor = null, specials = false }) => {
-  const owned = new Set();
-  for (const entry of collection.entries.values()) for (const copy of entry.copies) owned.add(pocketOf(copy.card));
-
-  const wants = new Map();
-  for (const binder of binders) {
-    if (binder.gameType !== 'lorcana' || !binder.setCode) continue;
-    for (const card of getBinderMissing(binder, index, specials)) {
-      // Two binders of the same chapter wait for the same card
-      if (owned.has(pocketOf(card)) || wants.has(`binder:${card.id}`)) continue;
-      wants.set(`binder:${card.id}`, { id: card.id, key: card.key, card, qty: 1, for: 'binder' });
-    }
+export const getWants = (options) => {
+  const { binders, units } = getWantList(options);
+  const wants = binders.flatMap((b) =>
+    b.wanted.map(({ card }) => ({ id: card.id, key: card.key, card, qty: 1, for: 'binder' }))
+  );
+  const deckMissing = new Map();
+  for (const line of units.flatMap((u) => u.cards)) {
+    if (!line.card || line.missing <= 0) continue;
+    const want = deckMissing.get(line.key) ?? { id: line.card.id, key: line.key, card: line.card, qty: 0, for: 'deck' };
+    want.qty += line.missing;
+    deckMissing.set(line.key, want);
   }
-  for (const deck of decks) {
-    if (deck.kind === 'reference') continue;
-    for (const e of analyzeDeck(deck, index, collection, 'en', availableFor).missing) {
-      if (!e.card || e.missing <= 0) continue;
-      const want = wants.get(`deck:${e.key}`);
-      if (want) want.qty += e.missing;
-      else wants.set(`deck:${e.key}`, { id: e.card.id, key: e.key, card: e.card, qty: e.missing, for: 'deck' });
-    }
-  }
-  return [...wants.values()];
+  return [...wants, ...deckMissing.values()];
 };
 
 /**

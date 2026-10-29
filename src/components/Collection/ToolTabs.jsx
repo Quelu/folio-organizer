@@ -1,16 +1,14 @@
-import { useMemo, useState } from 'react';
-import { Sparkles, Layers, Repeat, Swords } from 'lucide-react';
+import { useMemo } from 'react';
+import { Sparkles, Layers, Repeat } from 'lucide-react';
 import ProgressBar from '../ui/ProgressBar';
 import CardThumb from '../ui/CardThumb';
 import CopyButton from '../ui/CopyButton';
 import { Panel, CompletionRow, CardGrid, Segmented } from './CollectionParts';
 import { useStore } from '../../hooks/storeContext';
 import { useCardLang } from '../../hooks/useCardLang';
-import { useDeckColor } from '../../hooks/useDeckColor';
-import { INKS, getMainPrinting } from '../../utils/catalog';
+import { INKS } from '../../utils/catalog';
 import { LORCANA_RARITIES, getLorcanaSetName } from '../../data/games';
 import { getPocketPrintings, getPlaysetCards, matchesCard } from '../../utils/collectionFilters';
-import { getDeckWantsLines } from '../../utils/cardmarketExport';
 import { getKeptCopies } from '../../utils/trades';
 
 const PLAYSET = 4;
@@ -260,128 +258,6 @@ export const DoublesTab = ({ ctx }) => {
                 </span>
               )}
               <span className="text-sm font-bold text-emerald-300 tabular-nums whitespace-nowrap">×{d.surplus}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </Panel>
-  );
-};
-
-/**
- * What the user's decks need from the collection, card by card: copies owned against the copies
- * the decks play, all decks built at once or one at a time.
- */
-export const DecksTab = ({ ctx, prices, onOpenDeck }) => {
-  const cardLang = useCardLang();
-  const deckColor = useDeckColor();
-  const { index, collection, usage, filters, query, decks } = ctx;
-  const [together, setTogether] = useState(true);
-  const [missingOnly, setMissingOnly] = useState(false);
-
-  const rows = useMemo(() => {
-    const chosen = filters.decks.length ? new Set(filters.decks) : null;
-    const cardFilters = { ...filters, decks: [] };
-    const list = [];
-    for (const [key, allUses] of usage) {
-      const uses = chosen ? allUses.filter((u) => chosen.has(u.deck.id)) : allUses;
-      if (uses.length === 0) continue;
-      const card = getMainPrinting(index, key);
-      if (card && !matchesCard(card, cardFilters, query, ctx)) continue;
-      if (!card && (query || Object.values(cardFilters).some((v) => (Array.isArray(v) ? v.length : v)))) continue;
-      const needed = together ? uses.reduce((s, u) => s + u.qty, 0) : Math.max(...uses.map((u) => u.qty));
-      const owned = collection.entries.get(key)?.total ?? 0;
-      const name = uses[0].deck.cards.find((c) => c.key === key)?.name ?? key;
-      list.push({ key, card, name, uses, needed, owned, missing: Math.max(0, needed - owned) });
-    }
-    return list.sort(
-      (a, b) => b.missing - a.missing || cardLang.keyName(a.key, a.name).localeCompare(cardLang.keyName(b.key, b.name))
-    );
-  }, [index, collection, usage, filters, query, ctx, together, cardLang]);
-
-  if (decks.length === 0) return <Empty>Crée un deck pour voir ici les cartes qu’il prend dans ta collection.</Empty>;
-
-  const short = rows.filter((r) => r.missing > 0);
-  const shown = missingOnly ? short : rows;
-  const copies = short.reduce((s, r) => s + r.missing, 0);
-  const cost = short.reduce((s, r) => s + (prices.getPrice(r.card) ?? 0) * r.missing, 0);
-  const wants = getDeckWantsLines(
-    short.map((r) => ({ key: r.key, qty: r.missing })),
-    index,
-    getMainPrinting,
-    false
-  ).join('\n');
-
-  return (
-    <Panel
-      icon={Swords}
-      title="Besoins des decks"
-      hint="Les cartes que jouent tes decks, face aux copies de ta collection (toutes éditions confondues)."
-      action={short.length > 0 && <CopyButton text={wants} label="Copier les manques" toast="Liste Cardmarket copiée" />}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Segmented
-            label="Construction des decks"
-            value={together}
-            onChange={setTogether}
-            options={[
-              { value: true, label: 'Tous montés', title: 'Les decks montés en même temps se partagent les copies' },
-              { value: false, label: 'Un à la fois', title: 'Un seul deck monté à la fois' },
-            ]}
-          />
-          <Segmented
-            label="Cartes affichées"
-            value={missingOnly}
-            onChange={setMissingOnly}
-            options={[
-              { value: false, label: 'Toutes' },
-              { value: true, label: 'À compléter' },
-            ]}
-          />
-        </div>
-        <span className="text-xs text-slate-400">
-          {short.length === 0 ? (
-            <span className="text-emerald-300">Rien ne manque 🎉</span>
-          ) : (
-            <>
-              <b className="text-white tabular-nums">{copies}</b> copie{copies > 1 ? 's' : ''} à trouver · environ{' '}
-              <b className="text-white">{prices.format(cost)}</b>
-            </>
-          )}
-        </span>
-      </div>
-      {shown.length === 0 ? (
-        <Empty>Aucune carte ne correspond à ces filtres.</Empty>
-      ) : (
-        <ul className="divide-y divide-white/5">
-          {shown.map((r) => (
-            <li key={r.key} className="flex items-center gap-3 py-2">
-              {r.card ? <CardThumb card={r.card} className="w-10 flex-shrink-0" dimmed={r.owned === 0} /> : <div className="w-10" />}
-              <div className="flex-1 min-w-0">
-                <div className="text-sm text-white truncate">{cardLang.keyName(r.key, r.name)}</div>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {r.uses.map((u) => (
-                    <button
-                      key={u.deck.id}
-                      onClick={() => onOpenDeck(u.deck.id)}
-                      className="inline-flex items-center gap-1.5 px-1.5 py-px rounded text-[10px] text-slate-300 ring-1 ring-inset ring-white/10 hover:bg-white/5 hover:text-white"
-                      title="Ouvrir le deck"
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: deckColor(u.deck.id) }} />
-                      {u.deck.name} ×{u.qty}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <span className="text-xs text-slate-400 tabular-nums whitespace-nowrap">
-                <b className="text-white">{r.owned}</b>/{r.needed}
-              </span>
-              <span
-                className={`w-10 text-right text-sm font-bold tabular-nums ${r.missing ? 'text-amber-300' : 'text-emerald-400'}`}
-              >
-                {r.missing ? `+${r.missing}` : '✓'}
-              </span>
             </li>
           ))}
         </ul>

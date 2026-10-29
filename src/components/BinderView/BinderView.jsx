@@ -11,6 +11,7 @@ import {
 } from '../../utils/calculations';
 import { getDreambornExportRows, generateDreambornCsv, downloadCsv } from '../../utils/csvExport';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
+import { useOpenWantList } from '../../hooks/useOpenWantList';
 import { getBinderPulls } from '../../utils/collection';
 import { useToast } from '../ui/toastContext';
 import CardDetailModal from '../Modals/CardDetailModal';
@@ -41,6 +42,7 @@ const BinderView = ({
   onOpenSidebar,
 }) => {
   const notify = useToast();
+  const openWantList = useOpenWantList();
   const [currentPage, setCurrentPage] = useState(1);
   const [highlight, setHighlight] = useState(null); // { cardNumber, token, kind: 'add'|'remove'|'locate' }
   const [celebrate, setCelebrate] = useState(null); // { page, token }
@@ -308,6 +310,7 @@ const BinderView = ({
           notify({ message: "Marques d'export réinitialisées" });
         }}
         onCardmarket={() => setCardmarketOpen(true)}
+        onWantList={() => openWantList({ binders: [binder.id] })}
       />
 
       <CardInputBar

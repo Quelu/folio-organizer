@@ -426,7 +426,7 @@ const DeckEditor = ({ deck, onBack, onOpenSidebar, onLocate, onDelete }) => {
           {tab === 'profile' && <DeckProfile analysis={analysis} />}
           {tab === 'missing' && (
             <div className="max-w-2xl">
-              <MissingCards entries={analysis.missing} />
+              <MissingCards entries={analysis.missing} deckId={deck.id} />
             </div>
           )}
           {tab === 'pull' && (

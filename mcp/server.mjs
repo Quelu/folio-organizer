@@ -34,6 +34,7 @@ import { buildCollection, getPullList, getCopyAllocation, getDeckUsage, getPulle
 import { analyzeDeck, parseDeckList, formatDeckList } from '../src/utils/deckRules.js';
 import { formatDeckProfile } from '../src/utils/deckProfile.js';
 import { getDeckTags } from '../src/utils/deckTags.js';
+import { getWantList } from '../src/utils/wantList.js';
 import { getBinderStats, getLocation } from '../src/utils/calculations.js';
 import { getGame, getLorcanaSetName, setKnownLorcanaSets, withFrenchNames, LORCANA_RARITIES } from '../src/data/games.js';
 
@@ -549,6 +550,51 @@ tool(
         return `#${n} ${cite(card)} — ${rarityLabel(card.rarity)} — page ${loc.page} rangée ${loc.row} col. ${loc.col}`;
       }),
     ].join('\n');
+  }
+);
+
+tool(
+  'want_list',
+  {
+    title: 'Want list',
+    description:
+      'Tout ce qu’il manque, compté une fois : les pochettes vides des fardes (version exacte du chapitre) et les copies qui manquent aux decks (toutes versions). Une copie rangée en farde compte aussi pour les decks ; les decks d’un groupe de variantes sont montés un à la fois.',
+    inputSchema: {
+      specials: z.boolean().optional().describe('Inclure les pochettes Épiques, Enchantées et Iconiques (réglage de l’app par défaut)'),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ specials }) => {
+    const { index, binders, decks, collection, deckGroups = [], allocations = {}, prefs = {} } = await getContext();
+    const list = getWantList({
+      binders,
+      decks,
+      index,
+      collection,
+      groups: deckGroups,
+      allocations,
+      specials: specials ?? prefs.wantSpecials ?? false,
+    });
+    const { totals } = list;
+    const lines = [
+      `${plural(totals.copies, 'copie')} à trouver : ${totals.binderOnly} pour les fardes seules, ${totals.deckOnly} pour les decks seuls, ${totals.both} qui servent aux deux.`,
+      '',
+      'Fardes :',
+    ];
+    for (const { binder, wanted, owned, total } of list.binders) {
+      lines.push(`« ${binder.name} » (${setLabel(binder.setCode)}) : ${owned}/${total}, ${plural(wanted.length, 'pochette')} à remplir`);
+      for (const w of wanted) lines.push(`  #${w.cardNumber} ${cite(w.card)}${w.alsoDeck ? ' — aussi pour un deck' : ''} — ${formatLocation(binder, w.cardNumber)}`);
+    }
+    lines.push('', 'Decks :');
+    for (const unit of list.units) {
+      const name = unit.decks.map((d) => `« ${d.name} »`).join(', ');
+      const label = unit.grouped ? `Variantes montées une à la fois ${name}` : `${name}${unit.locked ? ' (verrouillé)' : ''}`;
+      lines.push(`${label} : ${unit.missing ? `${plural(unit.missing, 'copie')} à trouver` : 'complet'}`);
+      for (const c of unit.cards.filter((x) => x.missing > 0)) {
+        lines.push(`  ${c.missing}× ${c.card ? cite(c.card) : c.name} (${c.owned}/${c.need})${c.alsoBinder ? ' — aussi pour une farde' : ''}`);
+      }
+    }
+    return lines.join('\n');
   }
 );
 
