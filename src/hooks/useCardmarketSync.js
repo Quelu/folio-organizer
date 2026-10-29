@@ -4,7 +4,15 @@ import { CARDMARKET_SYNC_FILE } from '../utils/cardmarketSync';
 // The journal changes while Claude works on Cardmarket: read it often, and when the tab comes back
 const INTERVAL = 15000;
 
-const ACTION_LABELS = { listed: 'mises en vente', removed: 'retirées', sold: 'vendues', delisted: 'retirées sur Cardmarket' };
+const ACTION_LABELS = {
+  listed: 'mises en vente',
+  removed: 'retirées',
+  sold: 'vendues',
+  delisted: 'retirées sur Cardmarket',
+  ordered: 'achetées',
+  arrived: 'achats arrivés',
+  cancelled: 'achats annulés',
+};
 
 /**
  * Reads the Cardmarket journal the MCP server writes next to the auto backup, and applies the

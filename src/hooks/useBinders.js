@@ -5,7 +5,7 @@ import { getGame } from '../data/games';
 import { withCounts, changeCopies } from '../utils/cards';
 import { MAX_VERSIONS } from '../utils/deckRules';
 import { findTagByName, nextTagColor } from '../utils/deckTags';
-import { applyCardmarketEvents, unlist } from '../utils/cardmarketSync';
+import { applyCardmarketEvents, applyPurchaseEvents, unlist } from '../utils/cardmarketSync';
 
 const MAX_HISTORY = 300;
 
@@ -25,6 +25,8 @@ const DEFAULT_STATE = {
   // Surplus copies put on sale, until sold and taken out: { [pocketCopyId]: { qty, at, cardmarket?, sold? } }
   // (see getPocketCopyId and utils/cardmarketSync.js)
   listings: {},
+  // Copies bought, waiting for delivery (see utils/cardmarketSync.js): { [id]: { cardId, key, qty, at, status, orderId?, source } }
+  purchases: {},
   // Last Cardmarket journal event applied (see utils/cardmarketSync.js): { seq, at }
   cardmarketSync: { seq: 0, at: null },
   // Pockets holding a foil and a normal copy where the foil is sold and the normal kept: { [pocketId]: true }
@@ -47,7 +49,8 @@ const DEFAULT_STATE = {
     // Language of card names, texts and pictures: 'fr' or 'en'
     cardLanguage: 'fr',
     // Want list: the Epic / Enchanted / Iconic pockets of the binders too
-    wantSpecials: false,
+    // Want list: the special rarities whose pockets are wanted too ('Epic', 'Enchanted', 'Iconic')
+    wantSpecialRarities: [],
     // Deck group suggestions turned down, by signature (see getDeckSetSignature)
     dismissedDeckGroups: [],
     // Resale: surplus copies worth less than this go to the bulk lots, not sold one by one
@@ -61,7 +64,12 @@ const DEFAULT_STATE = {
 const migrate = (state) => ({
   ...DEFAULT_STATE,
   ...state,
-  prefs: { ...DEFAULT_STATE.prefs, ...state.prefs },
+  prefs: {
+    ...DEFAULT_STATE.prefs,
+    // One switch for the three special rarities before they could be chosen one by one
+    ...(state.prefs?.wantSpecials && { wantSpecialRarities: ['Epic', 'Enchanted', 'Iconic'] }),
+    ...state.prefs,
+  },
   binders: (state.binders ?? []).map((b) => ({
     setSize: getGame(b.gameType).defaultSetSize,
     createdAt: Date.now(),
@@ -648,6 +656,62 @@ export const useBinders = () => {
     setState((prev) => ({ ...prev, listings: unlist(prev.listings, ids) }));
   }, []);
 
+  /** Notes copies as bought, waiting for delivery. items: [{ cardId, key, qty }]. Returns the purchase ids. */
+  const markBought = useCallback((items) => {
+    const added = Object.fromEntries(
+      items
+        .filter((i) => i.qty > 0)
+        .map(({ cardId, key, qty }) => [crypto.randomUUID(), { cardId, key, qty, at: Date.now(), status: 'ordered', orderId: null, source: 'manual' }])
+    );
+    setState((prev) => ({ ...prev, purchases: { ...prev.purchases, ...added } }));
+    return Object.keys(added);
+  }, []);
+
+  /** Forgets purchases (cancelled, or bought by mistake). Returns what restores them. */
+  const cancelPurchases = useCallback((ids) => {
+    const removed = Object.fromEntries(ids.filter((id) => stateRef.current.purchases[id]).map((id) => [id, stateRef.current.purchases[id]]));
+    setState((prev) => ({ ...prev, purchases: Object.fromEntries(Object.entries(prev.purchases).filter(([id]) => !ids.includes(id))) }));
+    return removed;
+  }, []);
+
+  /**
+   * Puts received copies in their pockets and closes their purchases. Returns what undoes it.
+   * @param {{ id: string, binderId: string|null, cardNumber: string, qty: number }[]} items binderId null
+   *   when no binder holds the card's chapter: the purchase is closed, the copies kept aside
+   */
+  const receivePurchases = useCallback((items) => {
+    const prev = stateRef.current;
+    const touched = new Set(items.map((i) => i.binderId).filter(Boolean));
+    const snapshot = {
+      binders: prev.binders.filter((b) => touched.has(b.id)).map((b) => ({ id: b.id, cards: b.cards })),
+      purchases: prev.purchases,
+    };
+    setState((state) => {
+      const ids = new Set(items.map((i) => i.id));
+      const binders = state.binders.map((b) => {
+        if (!touched.has(b.id)) return b;
+        let cards = b.cards;
+        for (const i of items) if (i.binderId === b.id) cards = changeCopies(cards, String(i.cardNumber), i.qty, false);
+        return { ...b, cards };
+      });
+      return { ...state, binders, purchases: Object.fromEntries(Object.entries(state.purchases).filter(([id]) => !ids.has(id))) };
+    });
+    return snapshot;
+  }, []);
+
+  const undoReceive = useCallback(({ binders: saved, purchases }) => {
+    const cardsOf = new Map(saved.map((b) => [b.id, b.cards]));
+    setState((prev) => ({
+      ...prev,
+      binders: prev.binders.map((b) => (cardsOf.has(b.id) ? { ...b, cards: cardsOf.get(b.id) } : b)),
+      purchases,
+    }));
+  }, []);
+
+  const restorePurchases = useCallback((removed) => {
+    setState((prev) => ({ ...prev, purchases: { ...prev.purchases, ...removed } }));
+  }, []);
+
   /** Applies the Cardmarket journal events not applied yet. Returns how many were. */
   const applyCardmarketJournal = useCallback((events) => {
     const fresh = events.filter((e) => e.seq > (stateRef.current.cardmarketSync?.seq ?? 0));
@@ -658,6 +722,7 @@ export const useBinders = () => {
       return {
         ...prev,
         listings: applyCardmarketEvents(prev.listings, pending),
+        purchases: applyPurchaseEvents(prev.purchases, pending),
         cardmarketSync: { seq: Math.max(...pending.map((e) => e.seq)), at: Math.max(...pending.map((e) => e.at)) },
       };
     });
@@ -725,6 +790,7 @@ export const useBinders = () => {
     listings: state.listings,
     sellFoil: state.sellFoil,
     cardmarketSync: state.cardmarketSync,
+    purchases: state.purchases,
     partners: state.partners,
     setPartnerTrade,
     completePartnerTrade,
@@ -764,6 +830,11 @@ export const useBinders = () => {
     unlistForSale,
     setSellFoil,
     applyCardmarketJournal,
+    markBought,
+    cancelPurchases,
+    restorePurchases,
+    receivePurchases,
+    undoReceive,
     removeCopies,
     restoreCopies,
     createDeckTag,

@@ -38,6 +38,7 @@ const toSell = (listing) => Math.max(0, listing.qty - (listing.sold ?? 0));
 export const applyCardmarketEvents = (listings, events) => {
   const next = { ...listings };
   for (const event of [...events].sort((a, b) => a.seq - b.seq)) {
+    if (!event.listingId) continue;
     const listing = next[event.listingId];
     if (!listing) continue;
     const online = listing.cardmarket?.qty ?? 0;
@@ -99,6 +100,44 @@ export const unlist = (listings, ids) => {
     if (!listing) continue;
     if ((listing.cardmarket?.qty ?? 0) > 0 || listing.sold) next[id] = { ...listing, qty: listing.sold ?? 0 };
     else delete next[id];
+  }
+  return next;
+};
+
+/**
+ * Purchases: copies the user bought (on Cardmarket or elsewhere) and is waiting for, so the want
+ * list stops asking for them. state.purchases is { [id]: { cardId, key, qty, at, status, orderId?, source } }:
+ * status 'ordered' until the parcel arrives ('arrived', seen on Cardmarket), then the user puts
+ * the copies in their pockets and the purchase is done.
+ *
+ * Journal events about purchases carry purchaseId instead of listingId:
+ * - ordered: copies bought (cardId, key, qty, orderId);
+ * - arrived: the order was received (Cardmarket shows it arrived);
+ * - cancelled: the order was cancelled.
+ */
+export const PURCHASE_ACTIONS = ['ordered', 'arrived', 'cancelled'];
+
+/** Applies the purchase events of the journal, in seq order. */
+export const applyPurchaseEvents = (purchases, events) => {
+  const next = { ...purchases };
+  for (const event of [...events].sort((a, b) => a.seq - b.seq)) {
+    if (!event.purchaseId) continue;
+    const purchase = next[event.purchaseId];
+    if (event.action === 'ordered') {
+      next[event.purchaseId] = {
+        cardId: event.cardId,
+        key: event.key,
+        qty: (purchase?.qty ?? 0) + event.qty,
+        at: event.at,
+        status: 'ordered',
+        orderId: event.orderId ?? null,
+        source: 'cardmarket',
+      };
+    } else if (purchase && event.action === 'arrived') {
+      next[event.purchaseId] = { ...purchase, status: 'arrived' };
+    } else if (purchase && event.action === 'cancelled') {
+      delete next[event.purchaseId];
+    }
   }
   return next;
 };

@@ -74,6 +74,7 @@ Si Claude Desktop ne trouve pas `node` (installé via nvm par exemple), mets le 
 | `surplus_cards` | Copies en trop rangées dans les fardes, avec leur pochette |
 | `cardmarket_plan` | Ce qu'il faut mettre en vente ou retirer sur Cardmarket pour suivre Folio |
 | `cardmarket_record` | Note dans Folio une action faite ou constatée sur Cardmarket |
+| `purchase_record` | Note des cartes achetées en attente de réception, puis leur arrivée |
 
 Les cartes sont citées `[chapitre-numéro] Nom - Version`, par exemple `[1-42] Elsa - Spirit of Winter`.
 
@@ -86,6 +87,7 @@ Dans l'onglet **Collection → Revente** de Folio, tu marques en vente les carte
 - il met en vente les cartes marquées dans Folio, après t'avoir montré le récapitulatif (prix, état, langue) et attendu ton accord ;
 - il retire de Cardmarket les cartes que tu as retirées de la vente dans Folio (mises dans un deck, par exemple) ;
 - il relève tes ventes, et les offres que tu as retirées toi-même sur Cardmarket, pour que Folio les suive.
+- il relève tes achats Cardmarket : les cartes commandées passent « en attente de réception » dans la want list, puis « arrivées » quand la commande l'est.
 
 Folio relit ces changements tout seul : la **sauvegarde auto dans un dossier** doit être activée, sur le dossier lu par le serveur. Les cartes vendues se sortent ensuite des fardes dans Folio (Revente → En vente → « Vendues : les sortir »).
 

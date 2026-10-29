@@ -1,6 +1,6 @@
 ---
 name: cardmarket-sales
-description: Synchronise les cartes Lorcana mises en vente dans Folio avec le stock Cardmarket de l'utilisateur, dans les deux sens, en pilotant Cardmarket avec Claude in Chrome (compte déjà connecté). Met en vente les cartes sélectionnées dans Folio, retire celles que Folio ne vend plus (mises dans un deck par exemple), relève les ventes et les retraits faits directement sur Cardmarket. À utiliser dès que l'utilisateur parle de vendre ses cartes sur Cardmarket, de synchroniser ses ventes, de mettre en vente ou retirer des cartes de son stock Cardmarket, ou de ses ventes Cardmarket, même sans dire « Folio ».
+description: Synchronise les cartes Lorcana mises en vente dans Folio avec le stock Cardmarket de l'utilisateur, dans les deux sens, en pilotant Cardmarket avec Claude in Chrome (compte déjà connecté). Met en vente les cartes sélectionnées dans Folio, retire celles que Folio ne vend plus (mises dans un deck par exemple), relève les ventes et les retraits faits directement sur Cardmarket, et note dans Folio les cartes achetées en attente de réception. À utiliser dès que l'utilisateur parle de vendre ses cartes sur Cardmarket, de synchroniser ses ventes ou ses achats, de mettre en vente ou retirer des cartes de son stock Cardmarket, de ses ventes ou de ses commandes Cardmarket, même sans dire « Folio ».
 ---
 
 # Vendre sur Cardmarket depuis Folio
@@ -8,7 +8,7 @@ description: Synchronise les cartes Lorcana mises en vente dans Folio avec le st
 Folio (serveur MCP `folio`) sait quelles copies l'utilisateur veut vendre, et lesquelles sont déjà en ligne d'après la dernière synchro. Toi, tu fais les gestes sur cardmarket.com avec Claude in Chrome, puis tu notes chaque geste dans Folio avec `cardmarket_record`. Folio relit ces notes tout seul (sauvegarde auto dans un dossier activée dans l'app).
 
 Sens Folio → Cardmarket : mettre en vente, retirer de la vente.
-Sens Cardmarket → Folio : ventes conclues, offres retirées par l'utilisateur sur le site.
+Sens Cardmarket → Folio : ventes conclues, offres retirées par l'utilisateur sur le site, achats en cours et reçus (`purchase_record`).
 
 ## Règles
 
@@ -40,6 +40,7 @@ Ouvre `https://www.cardmarket.com/fr/Lorcana`. Vérifie que l'utilisateur est co
 
 - stock : `https://www.cardmarket.com/fr/Lorcana/Stock/Offers/Singles` ;
 - ventes : `https://www.cardmarket.com/fr/Lorcana/Orders/Sales` (onglets payées, envoyées, arrivées…) ;
+- achats : `https://www.cardmarket.com/fr/Lorcana/Orders/Purchases` ;
 - recherche d'un produit : `https://www.cardmarket.com/fr/Lorcana/Products/Search?searchString=<nom>`.
 
 ### 3. Relever ce qui a bougé sur Cardmarket (Cardmarket → Folio)
@@ -66,6 +67,16 @@ Si l'offre a été vendue entre-temps, note `sold` à la place et préviens l'ut
 
 Regroupe les `cardmarket_record` par lot de quelques cartes pour ne rien perdre si la session s'arrête.
 
-### 6. Conclure
+### 6. Relever les achats (Cardmarket → Folio)
 
-Relance `cardmarket_plan` et donne un bilan court : mises en vente (nombre, total), retirées, ventes relevées. Rappelle que Folio applique ces changements tout seul, et que les cartes vendues se sortent des fardes dans Folio : Collection → Revente → En vente → « Vendues : les sortir ».
+Si l'utilisateur le demande, ou s'il a des commandes d'achat en cours, appelle `want_list` : sa section « Achetées, en attente de réception » liste ce que Folio sait déjà, avec le numéro de commande.
+
+1. Ouvre les achats. Pour chaque commande payée ou envoyée absente de cette section, note `ordered` pour chaque carte Lorcana de la commande : `card_id` (chapitre-numéro de la version achetée, retrouvé avec `search_cards` au besoin), quantité, `order_id`.
+2. Commande marquée arrivée (ou reçue) sur Cardmarket : note `arrived` avec son `order_id`. L'utilisateur range ensuite les cartes depuis Folio.
+3. Commande annulée : `cancelled` avec son `order_id`.
+
+Tu ne passes jamais de commande, ne paies rien et ne confirmes pas la réception d'une commande sur Cardmarket : tu ne fais que lire ces pages.
+
+### 7. Conclure
+
+Relance `cardmarket_plan` et donne un bilan court : mises en vente (nombre, total), retirées, ventes relevées, achats notés. Rappelle que Folio applique ces changements tout seul, et que les cartes vendues se sortent des fardes dans Folio : Collection → Revente → En vente → « Vendues : les sortir ».

@@ -16,7 +16,7 @@ import { getLocation } from '../../utils/calculations';
 import { getPocketId } from '../../utils/trades';
 import { getSaleLines, generateSaleCsv } from '../../utils/cardmarketExport';
 import { downloadCsv } from '../../utils/csvExport';
-import { getWantList, getWantCost } from '../../utils/wantList';
+import { getWantList, getWantCost, getWantSpecials } from '../../utils/wantList';
 import { LORCANA_RARITIES } from '../../data/games';
 
 const PLAYSET = 4;
@@ -124,7 +124,7 @@ const SaleRow = ({ copy, qty, checked, onCheck, prices, rotating, onSwap, childr
  */
 const ResaleTab = ({ ctx, prices }) => {
   const store = useStore();
-  const { binders, decks, deckGroups, allocations, prefs, setPref, listForSale, unlistForSale, removeCopies, restoreCopies, setSellFoil, cardmarketSync } = store;
+  const { binders, decks, deckGroups, allocations, prefs, setPref, listForSale, unlistForSale, removeCopies, restoreCopies, setSellFoil, cardmarketSync, purchases } = store;
   const notify = useToast();
   const cardLang = useCardLang();
   const { surplus, listed } = useSurplus();
@@ -175,9 +175,9 @@ const ResaleTab = ({ ctx, prices }) => {
 
   const wantCost = useMemo(() => {
     if (!index) return 0;
-    const { cards } = getWantList({ binders, decks, index, collection, groups: deckGroups, allocations, specials: prefs.wantSpecials ?? false });
+    const { cards } = getWantList({ binders, decks, index, collection, groups: deckGroups, allocations, specials: getWantSpecials(prefs), incoming: purchases });
     return getWantCost(cards, index, prices.getPrice);
-  }, [binders, decks, index, collection, deckGroups, allocations, prefs.wantSpecials, prices]);
+  }, [binders, decks, index, collection, deckGroups, allocations, prefs, purchases, prices]);
 
   const rows = status === 'toList' ? toList : onSale;
   const picked = rows.filter((r) => selected.has(r.id));

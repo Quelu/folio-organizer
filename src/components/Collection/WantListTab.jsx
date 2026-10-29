@@ -1,18 +1,20 @@
 import { useCallback, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Heart, Library, Swords, ChevronDown, Check, Lock, Link2, Unlink, X, MapPin } from 'lucide-react';
+import { Heart, Library, Swords, ChevronDown, Check, Lock, Link2, Unlink, X, MapPin, ShoppingBag } from 'lucide-react';
 import ProgressBar from '../ui/ProgressBar';
 import CardThumb from '../ui/CardThumb';
 import CopyButton from '../ui/CopyButton';
 import { CardGrid, Segmented } from './CollectionParts';
 import { PocketHint } from '../Trades/PocketMap';
+import IncomingPurchases from './IncomingPurchases';
+import { useToast } from '../ui/toastContext';
 import { useStore } from '../../hooks/storeContext';
 import { useCardLang } from '../../hooks/useCardLang';
 import { useDeckColor } from '../../hooks/useDeckColor';
-import { getMainPrinting } from '../../utils/catalog';
+import { getMainPrinting, SPECIAL_RARITIES } from '../../utils/catalog';
 import { matchesCard } from '../../utils/collectionFilters';
 import { getDeckWantsLines, getSaleLines, splitWantsLists } from '../../utils/cardmarketExport';
-import { getWantList, summarizeWants, suggestDeckGroups, getDeckSetSignature, getWantCost } from '../../utils/wantList';
+import { getWantList, summarizeWants, suggestDeckGroups, getDeckSetSignature, getWantCost, getWantSpecials } from '../../utils/wantList';
 
 /** Section colors: binders violet, decks orange, a copy serving both teal. */
 const TONES = {
@@ -22,6 +24,45 @@ const TONES = {
 };
 
 const plural = (n, word) => `${n} ${word}${n > 1 ? 's' : ''}`;
+
+const SPECIAL_LABELS = { Epic: 'Épiques', Enchanted: 'Enchantées', Iconic: 'Iconiques' };
+
+/** Cardmarket wants of empty pockets, each in its chapter's printing. */
+const pocketWants = (wanted, index) => getSaleLines(wanted.map((w) => ({ card: w.card, foil: false, qty: 1 })), index);
+
+/** Cardmarket wants of a deck's missing copies, as the newest regular printing. */
+const deckWants = (lines, index) =>
+  getDeckWantsLines(
+    lines.map((l) => ({ key: l.key, qty: l.missing })),
+    index,
+    getMainPrinting,
+    false
+  );
+
+/** Copy buttons for a wants list, split in lists Cardmarket accepts. */
+const WantsCopy = ({ lines, label = 'Wants Cardmarket' }) => {
+  const lists = splitWantsLists(lines).map((l) => l.join('\n'));
+  return lists.map((text, i) => (
+    <CopyButton
+      key={i}
+      text={text}
+      label={lists.length > 1 ? `${label} ${i + 1}/${lists.length}` : label}
+      toast="Liste Cardmarket copiée"
+      className="btn-secondary px-2.5 py-1 text-xs"
+    />
+  ));
+};
+
+const BoughtButton = ({ onClick, label = 'Achetée', title = 'Achetée : en attente de réception' }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    title={title}
+    className="inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-emerald-300 whitespace-nowrap"
+  >
+    <ShoppingBag size={11} /> {label}
+  </button>
+);
 
 const BothBadge = ({ label, title }) => (
   <span
@@ -56,7 +97,7 @@ const Block = ({ header, open, onToggle, children }) => (
 );
 
 /** An empty pocket: the card, its number, and the binder page around it on hover of its place. */
-const PocketTile = ({ want, price }) => {
+const PocketTile = ({ want, price, onBought }) => {
   const [anchor, setAnchor] = useState(null);
   const hide = useCallback(() => setAnchor(null), []);
   const show = (e) => setAnchor(e.currentTarget.getBoundingClientRect());
@@ -78,18 +119,17 @@ const PocketTile = ({ want, price }) => {
         </button>
         <span className="text-slate-500 tabular-nums">{price}</span>
       </div>
-      {want.alsoDeck && (
-        <div className="mt-1">
-          <BothBadge label="+ deck" title="Un de tes decks en manque aussi : cette copie servira aux deux" />
-        </div>
-      )}
+      <div className="mt-1 flex flex-wrap items-center justify-between gap-1">
+        {want.alsoDeck && <BothBadge label="+ deck" title="Un de tes decks en manque aussi : cette copie servira aux deux" />}
+        <BoughtButton onClick={onBought} />
+      </div>
       {anchor && <PocketHint pocket={{ binder: want.binder, cardNumber: want.cardNumber, mode: 'in', card: want.card }} anchor={anchor} onClose={hide} />}
     </div>
   );
 };
 
 /** A card a deck unit misses: who plays it, what is owned, what to find. */
-const DeckLine = ({ line, unit, colorOf, onOpenDeck }) => {
+const DeckLine = ({ line, unit, colorOf, onOpenDeck, onBought }) => {
   const cardLang = useCardLang();
   const shared = line.sharedWith.flatMap((u) => u.decks.map((d) => d.name));
   return (
@@ -122,6 +162,7 @@ const DeckLine = ({ line, unit, colorOf, onOpenDeck }) => {
         <b className="text-white">{line.owned}</b>/{line.need}
       </span>
       <span className="w-10 text-right text-sm font-bold tabular-nums text-orange-300">+{line.missing}</span>
+      {line.card && <BoughtButton onClick={onBought} title={`${line.missing} achetée${line.missing > 1 ? 's' : ''} : en attente de réception`} />}
     </li>
   );
 };
@@ -131,19 +172,22 @@ const DeckLine = ({ line, unit, colorOf, onOpenDeck }) => {
  * each card counted once in the totals and the Cardmarket list (see getWantList).
  */
 const WantListTab = ({ ctx, prices, onOpenDeck }) => {
-  const { binders, decks: allDecks, deckGroups, allocations, prefs, setPref, groupDecks, ungroupDecks } = useStore();
+  const { binders, decks: allDecks, deckGroups, allocations, purchases, prefs, setPref, groupDecks, ungroupDecks, markBought, cancelPurchases } = useStore();
+  const notify = useToast();
   const cardLang = useCardLang();
   const colorOf = useDeckColor();
   const { index, collection, filters, query } = ctx;
-  const specials = prefs.wantSpecials ?? false;
+  const specials = useMemo(() => getWantSpecials(prefs), [prefs]);
+  const toggleSpecial = (rarity, on) =>
+    setPref('wantSpecialRarities', on ? [...specials, rarity] : specials.filter((r) => r !== rarity));
   const dismissed = useMemo(() => prefs.dismissedDeckGroups ?? [], [prefs.dismissedDeckGroups]);
   const [lens, setLens] = useState('all');
   const [openBlocks, setOpenBlocks] = useState({});
   const toggle = (id) => setOpenBlocks((o) => ({ ...o, [id]: !o[id] }));
 
   const list = useMemo(
-    () => getWantList({ binders, decks: allDecks, index, collection, groups: deckGroups, allocations, specials }),
-    [binders, allDecks, index, collection, deckGroups, allocations, specials]
+    () => getWantList({ binders, decks: allDecks, index, collection, groups: deckGroups, allocations, specials, incoming: purchases }),
+    [binders, allDecks, index, collection, deckGroups, allocations, specials, purchases]
   );
   const suggestions = useMemo(() => suggestDeckGroups(allDecks, deckGroups, dismissed), [allDecks, deckGroups, dismissed]);
 
@@ -179,6 +223,23 @@ const WantListTab = ({ ctx, prices, onOpenDeck }) => {
   }, [list, filters, query, ctx, lens, index, cardLang]);
 
   const priceOf = (card) => (card ? prices.getPrice(card) : null);
+
+  /** Notes copies as bought (pockets: 1 in their printing; deck lines: their missing copies), with a way back. */
+  const bought = ({ pockets = [], lines = [] }) => {
+    const items = [
+      ...pockets.map((w) => ({ cardId: w.card.id, key: w.key, qty: 1 })),
+      ...lines.filter((l) => l.card).map((l) => ({ cardId: l.card.id, key: l.key, qty: l.missing })),
+    ];
+    const ids = markBought(items);
+    const n = items.reduce((s, i) => s + i.qty, 0);
+    notify({
+      tone: 'success',
+      message: `${n} copie${n > 1 ? 's' : ''} en attente de réception`,
+      action: { label: 'Annuler', onClick: () => cancelPurchases(ids) },
+      duration: 7000,
+    });
+  };
+  const awaiting = Object.values(purchases).reduce((s, p) => s + p.qty, 0);
   const cost = getWantCost(shown.cards, index, prices.getPrice);
 
   // Pockets in their chapter's printing, the decks' extra copies as the newest regular printing
@@ -222,6 +283,7 @@ const WantListTab = ({ ctx, prices, onOpenDeck }) => {
                   environ <b className="text-white">{prices.format(cost)}</b>
                 </>
               )}
+              {awaiting > 0 && <span className="text-emerald-300"> · {awaiting} en attente de réception</span>}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -265,6 +327,8 @@ const WantListTab = ({ ctx, prices, onOpenDeck }) => {
         )}
       </section>
 
+      <IncomingPurchases index={index} />
+
       {lens !== 'decks' && (
         <section data-preview-group className={`rounded-2xl ring-1 ring-inset p-4 sm:p-5 space-y-2 ${TONES.binder.section}`}>
           <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
@@ -277,18 +341,29 @@ const WantListTab = ({ ctx, prices, onOpenDeck }) => {
                 <span className="block text-xs font-normal text-slate-400">Une copie par pochette vide, dans la version du chapitre</span>
               </span>
             </h3>
-            <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none">
-              <input type="checkbox" checked={specials} onChange={(e) => setPref('wantSpecials', e.target.checked)} className="w-4 h-4 accent-violet-500" />
-              Épiques, Enchantées et Iconiques
-            </label>
+            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400" role="group" aria-label="Raretés spéciales voulues">
+              <span>Aussi :</span>
+              {SPECIAL_RARITIES.map((rarity) => (
+                <label key={rarity} className="flex items-center gap-1.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={specials.includes(rarity)}
+                    onChange={(e) => toggleSpecial(rarity, e.target.checked)}
+                    className="w-4 h-4 accent-violet-500"
+                  />
+                  {SPECIAL_LABELS[rarity]}
+                </label>
+              ))}
+            </div>
           </div>
           {shown.binderLists.length === 0 && <p className="text-sm text-slate-500">Aucune farde ne correspond à ces filtres.</p>}
-          {shown.binderLists.map(({ binder, wanted, owned, total }) =>
+          {shown.binderLists.map(({ binder, wanted, awaiting: binderAwaiting, owned, total }) =>
             wanted.length === 0 ? (
               <div key={binder.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/[0.02] ring-1 ring-inset ring-white/[0.06]">
                 <span className="flex-1 min-w-0 text-sm text-slate-300 truncate">{binder.name}</span>
                 <span className="text-xs text-emerald-300 flex items-center gap-1">
-                  <Check size={13} /> {owned === total ? 'complète' : 'rien avec ces filtres'}
+                  <Check size={13} />{' '}
+                  {owned === total ? 'complète' : binderAwaiting ? `${binderAwaiting} en attente de réception` : 'rien avec ces filtres'}
                 </span>
               </div>
             ) : (
@@ -304,6 +379,7 @@ const WantListTab = ({ ctx, prices, onOpenDeck }) => {
                         <ProgressBar value={total ? owned / total : 0} className="flex-1 max-w-48 h-1.5" />
                         <span className="text-[11px] text-slate-500 tabular-nums">
                           {owned}/{total}
+                          {binderAwaiting > 0 && <span className="text-emerald-300"> · {binderAwaiting} en attente</span>}
                         </span>
                       </span>
                     </span>
@@ -313,9 +389,17 @@ const WantListTab = ({ ctx, prices, onOpenDeck }) => {
                   </>
                 }
               >
+                <div className="flex flex-wrap items-center gap-2 mb-3">
+                  <WantsCopy lines={pocketWants(wanted, index)} />
+                  <button onClick={() => bought({ pockets: wanted })} className="btn-secondary px-2.5 py-1 text-xs">
+                    <ShoppingBag size={13} /> Tout marquer acheté ({wanted.length})
+                  </button>
+                </div>
                 <CardGrid
                   items={wanted}
-                  render={(w) => <PocketTile key={w.card.id} want={w} price={prices.format(priceOf(w.card))} />}
+                  render={(w) => (
+                    <PocketTile key={w.card.id} want={w} price={prices.format(priceOf(w.card))} onBought={() => bought({ pockets: [w] })} />
+                  )}
                 />
               </Block>
             )
@@ -400,9 +484,22 @@ const WantListTab = ({ ctx, prices, onOpenDeck }) => {
                 </>
               }
             >
+              <div className="flex flex-wrap items-center gap-2 mb-1">
+                <WantsCopy lines={deckWants(unit.lines, index)} />
+                <button onClick={() => bought({ lines: unit.lines })} className="btn-secondary px-2.5 py-1 text-xs">
+                  <ShoppingBag size={13} /> Tout marquer acheté ({unit.lines.reduce((s, l) => s + l.missing, 0)})
+                </button>
+              </div>
               <ul className="divide-y divide-white/5">
                 {unit.lines.map((line) => (
-                  <DeckLine key={line.key} line={line} unit={unit} colorOf={colorOf} onOpenDeck={onOpenDeck} />
+                  <DeckLine
+                    key={line.key}
+                    line={line}
+                    unit={unit}
+                    colorOf={colorOf}
+                    onOpenDeck={onOpenDeck}
+                    onBought={() => bought({ lines: [line] })}
+                  />
                 ))}
               </ul>
               <div className="flex flex-wrap gap-3 mt-2">
