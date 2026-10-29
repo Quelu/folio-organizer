@@ -6,6 +6,7 @@ import { replayGame } from '../../hooks/useSimulation';
 import { LORE_TO_WIN } from '../../utils/handStats';
 import { CURVE_ROUNDS, IMPACT_MIN_GAMES, cardImpact, gameLength, loreCurve, winRate } from '../../utils/simulation/stats';
 import { SERIES, STATUS, SURFACE, formatNumber, formatPoints } from './shared';
+import CardName from './CardName';
 
 const formatPercent = (x, digits = 0) => `${(x * 100).toLocaleString('fr-BE', { maximumFractionDigits: digits })} %`;
 const formatMargin = (margin) => `± ${formatPoints(margin)}`;
@@ -362,7 +363,7 @@ const ImpactPanel = ({ run }) => {
               <th className="font-medium px-1 pb-2 text-right">Écart</th>
             </tr>
           </thead>
-          <tbody className="tabular-nums">
+          <tbody data-preview-group className="tabular-nums">
             {rows.map((row) => {
               const up = row.delta != null && row.delta >= 0;
               const Arrow = up ? ArrowUp : ArrowDown;
@@ -374,7 +375,7 @@ const ImpactPanel = ({ run }) => {
                 >
                   <td className="px-1 py-1.5 text-slate-200">
                     <span className="flex items-center gap-2 min-w-0">
-                      <span className="truncate max-w-[16rem]">{row.card.name}</span>
+                      <CardName card={row.card} className="truncate max-w-[16rem]" />
                       {row.card.uncovered && (
                         <span className="flex-shrink-0 px-1.5 py-px rounded text-[10px] text-slate-400 bg-white/5 ring-1 ring-inset ring-white/10">
                           {UNCOVERED[row.card.uncovered]}
@@ -407,10 +408,30 @@ const ImpactPanel = ({ run }) => {
 
 const REASONS = { lore: `${LORE_TO_WIN} lore`, deckout: 'deck adverse vide', timeout: 'limite de tours' };
 
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * The cards of both decks by name, and a pattern finding those names in the log's sentences:
+ * longest first, so a name never cuts a longer one short.
+ */
+const logCards = (decks) => {
+  const byName = new Map(decks.flatMap((d) => d.cards.map((card) => [card.name, card])));
+  const names = [...byName.keys()].sort((a, b) => b.length - a.length).map(escapeRegExp);
+  const pattern = names.length ? new RegExp(`(?<![\\p{L}\\p{N}])(${names.join('|')})(?![\\p{L}\\p{N}])`, 'u') : null;
+  return { byName, pattern };
+};
+
+/** A log sentence, its card names showing their card on hover. */
+const LogText = ({ text, cards }) =>
+  cards.pattern
+    ? text.split(cards.pattern).map((part, i) => (i % 2 ? <CardName key={i} card={cards.byName.get(part)} className="text-slate-100" /> : part))
+    : text;
+
 /** One game of the run played again, turn by turn, to check how the pilots play. */
 const LogPanel = ({ run }) => {
   const [n, setN] = useState(null);
   const replay = useMemo(() => (n == null ? null : replayGame(run, n)), [run, n]);
+  const cards = useMemo(() => logCards(run.decks), [run.decks]);
   const { labels } = run;
   const pick = () => setN(Math.floor(Math.random() * run.tally.games));
 
@@ -437,7 +458,7 @@ const LogPanel = ({ run }) => {
       {replay && (
         <>
           <p className="text-xs text-slate-300 mb-3">{summary}</p>
-          <ol className="max-h-96 overflow-auto scrollbar-thin space-y-1 text-xs">
+          <ol data-preview-group className="max-h-96 overflow-auto scrollbar-thin space-y-1 text-xs">
             {replay.log.map((line, i) => {
               const prev = replay.log[i - 1];
               const newRound = !prev || prev.round !== line.round;
@@ -447,7 +468,7 @@ const LogPanel = ({ run }) => {
                   <span className="w-2 h-2 rounded-sm mt-1 flex-shrink-0" style={{ background: SERIES[line.player] }} />
                   <span className="text-slate-300">
                     <span className="text-slate-500">{labels[line.player]} </span>
-                    {line.text}
+                    <LogText text={line.text} cards={cards} />
                   </span>
                 </li>
               );

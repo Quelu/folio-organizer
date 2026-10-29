@@ -3,6 +3,7 @@ import { Menu as MenuIcon, ArrowLeft, FlaskConical, Play, Square, ChevronDown, A
 import { Panel, Segmented } from '../Collection/CollectionParts';
 import ProgressBar from '../ui/ProgressBar';
 import SimulationResults from './SimulationResults';
+import CardName from './CardName';
 import { useStore } from '../../hooks/storeContext';
 import { useCatalog } from '../../hooks/catalogContext';
 import { useCardLang } from '../../hooks/useCardLang';
@@ -149,12 +150,12 @@ const DeckSlot = ({ slot, decks, deckId, onDeck, choice, onChoice, info, lang })
               )}
             </button>
             {open && (
-              <ul className="mt-2 space-y-1 max-h-48 overflow-auto scrollbar-thin">
+              <ul data-preview-group className="mt-2 space-y-1 max-h-48 overflow-auto scrollbar-thin">
                 {coverage.ignored.map((x) => (
                   <li key={x.index} className="flex items-baseline justify-between gap-3 text-xs">
-                    <span className="text-slate-300 truncate">
-                      <span className="text-slate-500 tabular-nums">{x.qty}× </span>
-                      {info.sim.cards[x.index].name}
+                    <span className="flex items-baseline min-w-0 text-slate-300">
+                      <span className="flex-shrink-0 mr-1 text-slate-500 tabular-nums">{x.qty}×</span>
+                      <CardName card={info.sim.cards[x.index]} className="truncate" />
                     </span>
                     <span className="text-slate-500 text-right min-w-0 max-w-[55%] truncate" title={ignoredLabel(x, lang)}>
                       {ignoredLabel(x, lang)}

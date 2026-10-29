@@ -104,6 +104,8 @@ export const prepareSimDeck = (analysis, nameOf, abilities = null) => {
     const hereAbilities = Object.values(compiled?.triggered ?? {}).flat().filter((a) => a.trigger.on === 'CHARACTERS_HERE').length;
     return {
       key,
+      // The deck's printing, for its picture
+      id: card.id,
       name: nameOf(card),
       // The English name, as abilities name the cards they look for
       title: card.name,
