@@ -79,8 +79,25 @@ export const splitWantsLists = (lines) =>
   );
 
 /**
+ * One Cardmarket deck list line for a printing: "2 Elsa - Spirit of Winter (V.1) (The First Chapter)".
+ * Same (V.n) rule as getCardmarketWants within the printing's chapter.
+ * @param {object} card catalog printing
+ * @param {number} qty
+ * @param {object} index catalog index (src/utils/catalog.js)
+ * @param {boolean} [withExpansion] restricts the line to that chapter
+ */
+const getCardmarketLine = (card, qty, index, withExpansion = true) => {
+  const setCards = [...(index.bySet.get(card.set) ?? [])].sort(byCollectorNumber);
+  const group = setCards.filter((c) => getCardmarketName(c).toLowerCase() === getCardmarketName(card).toLowerCase());
+  const anyVariant = group.every((c) => baseNumber(c.number) === baseNumber(card.number));
+  const version = group.length > 1 && !anyVariant ? group.indexOf(card) + 1 : null;
+  const expansion = withExpansion && card.setName ? ` (${card.setName})` : '';
+  return `${qty} ${getCardmarketName(card)}${version ? ` (V.${version})` : ''}${expansion}`;
+};
+
+/**
  * Cardmarket deck list of cards to buy for a deck: { key, qty } entries, bought as their regular
- * printing from the newest chapter. Same (V.n) rule as getCardmarketWants within that chapter.
+ * printing from the newest chapter.
  * @param {{ key: string, qty: number }[]} wants
  * @param {object} index catalog index (src/utils/catalog.js)
  * @param {(index: object, key: string) => object|null} getPrinting
@@ -91,12 +108,51 @@ export const getDeckWantsLines = (wants, index, getPrinting, withExpansion = tru
   wants
     .map(({ key, qty }) => {
       const card = getPrinting(index, key);
-      if (!card) return null;
-      const setCards = [...(index.bySet.get(card.set) ?? [])].sort(byCollectorNumber);
-      const group = setCards.filter((c) => getCardmarketName(c).toLowerCase() === getCardmarketName(card).toLowerCase());
-      const anyVariant = group.every((c) => baseNumber(c.number) === baseNumber(card.number));
-      const version = group.length > 1 && !anyVariant ? group.indexOf(card) + 1 : null;
-      const expansion = withExpansion && card.setName ? ` (${card.setName})` : '';
-      return `${qty} ${getCardmarketName(card)}${version ? ` (V.${version})` : ''}${expansion}`;
+      return card ? getCardmarketLine(card, qty, index, withExpansion) : null;
     })
     .filter(Boolean);
+
+/**
+ * Cards to put on sale, in Cardmarket deck list format: one line per printing and variant,
+ * chapter then collector number order, foils marked "*Foil*" (to set when listing them).
+ * @param {{ card: object, foil: boolean, qty: number }[]} items from getTradeableSurplus
+ * @param {object} index catalog index
+ * @returns {string[]}
+ */
+export const getSaleLines = (items, index) =>
+  [...items].sort(bySetAndNumber).map((i) => `${getCardmarketLine(i.card, i.qty, index)}${i.foil ? ' *Foil*' : ''}`);
+
+const csvCell = (value) => (/[",\n]/.test(String(value)) ? `"${String(value).replace(/"/g, '""')}"` : String(value));
+
+/**
+ * CSV of the cards to put on sale, for a spreadsheet or another marketplace.
+ * @param {{ card: object, foil: boolean, qty: number, price: number|null }[]} items
+ * @returns {string}
+ */
+export const generateSaleCsv = (items) => {
+  const lines = ['Set Number,Set Name,Card Number,Name,Rarity,Foil,Count,Unit Price'];
+  for (const i of [...items].sort(bySetAndNumber)) {
+    lines.push(
+      [
+        i.card.set,
+        i.card.setName ?? '',
+        i.card.number,
+        i.card.fullName,
+        i.card.rarity ?? '',
+        i.foil ? 'foil' : 'normal',
+        i.qty,
+        i.price?.toFixed(2) ?? '',
+      ]
+        .map(csvCell)
+        .join(','),
+    );
+  }
+  return lines.join('\n');
+};
+
+const bySetAndNumber = (a, b) =>
+  String(a.card.set).localeCompare(String(b.card.set), undefined, {
+    numeric: true,
+  }) ||
+  byCollectorNumber(a.card, b.card) ||
+  Number(a.foil) - Number(b.foil);

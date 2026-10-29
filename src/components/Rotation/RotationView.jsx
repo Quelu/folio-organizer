@@ -1,17 +1,22 @@
-import { useMemo } from 'react';
-import { Menu as MenuIcon, CalendarClock, Layers, Library, Sparkles, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Menu as MenuIcon, CalendarClock, Layers, Library, Sparkles, ArrowRight, CheckCircle2, Download } from 'lucide-react';
 import CardThumb from '../ui/CardThumb';
 import CopyButton from '../ui/CopyButton';
-import { Panel, CardGrid } from '../Collection/CollectionParts';
+import { Panel, CardGrid, Segmented } from '../Collection/CollectionParts';
 import { useStore } from '../../hooks/storeContext';
 import { useCatalog } from '../../hooks/catalogContext';
 import { useCollection } from '../../hooks/useCollection';
 import { usePrices } from '../../hooks/usePrices';
 import { useCardLang } from '../../hooks/useCardLang';
 import { getInk, getMainPrinting } from '../../utils/catalog';
-import { getDeckUsage } from '../../utils/collection';
 import { getNextRotation, getDeckSize, describeChapters, formatLongDate } from '../../utils/deckRules';
 import { getLorcanaSetName } from '../../data/games';
+import { getTradeableSurplus } from '../../utils/trades';
+import { getSaleLines, generateSaleCsv } from '../../utils/cardmarketExport';
+import { downloadCsv } from '../../utils/csvExport';
+
+const PLAYSET = 4;
+
 
 const plural = (n, word) => `${n.toLocaleString('fr-BE')} ${word}${n > 1 ? 's' : ''}`;
 
@@ -89,11 +94,14 @@ const DeckRow = ({ deck, rotating, index, rotation, onOpen, onAsk }) => {
 
 /** The next Core rotation: decks losing cards and owned cards leaving Core, with their value. */
 const RotationView = ({ onOpenSidebar }) => {
-  const { decks, setView } = useStore();
+  const { decks, setView, prefs, setPref } = useStore();
   const { index } = useCatalog();
   const collection = useCollection();
   const prices = usePrices();
   const cardLang = useCardLang();
+  const keep = prefs.tradeKeep ?? 1;
+  // Chapters left out of the sale export
+  const [excluded, setExcluded] = useState(() => new Set());
 
   const data = useMemo(() => {
     if (!index) return null;
@@ -104,7 +112,6 @@ const RotationView = ({ onOpenSidebar }) => {
       .map((deck) => ({ deck, rotating: deck.cards.filter((c) => rotation.leaves(c.key)) }))
       .filter((d) => d.rotating.length)
       .sort((a, b) => b.rotating.reduce((s, c) => s + c.qty, 0) - a.rotating.reduce((s, c) => s + c.qty, 0));
-    const usage = getDeckUsage(decks.filter((d) => d.format === 'core'));
     const cards = [...collection.entries.values()]
       .filter((e) => rotation.leaves(e.key))
       .map((e) => ({
@@ -113,11 +120,36 @@ const RotationView = ({ onOpenSidebar }) => {
           (s, c) => s + c.normal * (prices.getPrice(c.card) ?? 0) + c.foil * (prices.getPrice(c.card, true) ?? 0),
           0
         ),
-        decks: usage.get(e.key) ?? [],
       }))
       .sort((a, b) => b.value - a.value || a.card.fullName.localeCompare(b.card.fullName));
-    return { rotation, coreDecks, touched, cards };
-  }, [index, decks, collection, prices]);
+    // Copies to sell: beyond the kept ones, every deck counted (an Infinity deck keeps its copies)
+    const groups = new Map();
+    for (const item of getTradeableSurplus(collection, decks, keep, prices.getPrice)) {
+      if (!rotation.leaves(item.key)) continue;
+      const set = String(item.card.set);
+      if (!groups.has(set))
+        groups.set(set, {
+          set,
+          name: getLorcanaSetName(set) ?? item.card.setName ?? '',
+          items: [],
+        });
+      groups.get(set).items.push(item);
+    }
+    const sale = [...groups.values()]
+      .map((g) => ({
+        ...g,
+        items: g.items.sort(
+          (a, b) =>
+            parseInt(a.card.number, 10) - parseInt(b.card.number, 10) ||
+            a.card.number.localeCompare(b.card.number) ||
+            Number(a.foil) - Number(b.foil),
+        ),
+        copies: g.items.reduce((s, i) => s + i.qty, 0),
+        value: g.items.reduce((s, i) => s + i.qty * (i.price ?? 0), 0),
+      }))
+      .sort((a, b) => a.set.localeCompare(b.set, undefined, { numeric: true }));
+    return { rotation, coreDecks, touched, cards, sale };
+  }, [index, decks, collection, prices, keep]);
 
   const header = (
     <header className="px-4 sm:px-6 pt-4 pb-4 border-b border-white/5">
@@ -160,9 +192,18 @@ const RotationView = ({ onOpenSidebar }) => {
     );
   }
 
-  const { rotation, coreDecks, touched, cards } = data;
+  const { rotation, coreDecks, touched, cards, sale } = data;
   const chapters = rotation.sets.map((s) => `${s} · ${getLorcanaSetName(s) ?? ''}`.replace(/ · $/, ''));
-  const listText = cards.map((e) => `${e.total} ${e.card.fullName}`).join('\n');
+  const selected = sale.filter((g) => !excluded.has(g.set)).flatMap((g) => g.items);
+  const selectedCopies = selected.reduce((s, i) => s + i.qty, 0);
+  const saleText = getSaleLines(selected, index).join('\n');
+  const toggleChapter = (set) =>
+    setExcluded((prev) => {
+      const next = new Set(prev);
+      if (next.has(set)) next.delete(set);
+      else next.add(set);
+      return next;
+    });
 
   return (
     <div className="flex flex-col h-full">
@@ -223,34 +264,91 @@ const RotationView = ({ onOpenSidebar }) => {
           <Panel
             icon={Library}
             title="Tes cartes qui quittent le Core"
-            hint="À garder pour l'Infinity, ou à échanger si tu ne joues qu'en Core. Triées par valeur."
-            action={cards.length > 0 && <CopyButton text={listText} label="Copier la liste" toast="Liste copiée (noms anglais)" />}
+            hint={`${
+              keep >= PLAYSET ? 'Au-delà d’un playset par carte' : 'Au-delà d’un exemplaire gardé en farde'
+            }, plus les copies de tes decks (Infinity compris). Coche les chapitres à vendre sur Cardmarket ou ailleurs.`}
+            action={
+              selected.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <CopyButton text={saleText} label="Copier" toast="Liste copiée (format Cardmarket)" />
+                  <button
+                    onClick={() => downloadCsv(generateSaleCsv(selected), 'rotation-a-vendre.csv')}
+                    className="btn-secondary px-3 py-1.5"
+                    title="Chapitre, numéro, nom, foil, quantité et prix unitaire"
+                  >
+                    <Download size={15} />
+                    CSV
+                  </button>
+                </div>
+              )
+            }
           >
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <Segmented
+                label="Copies gardées"
+                value={keep}
+                onChange={(value) => setPref('tradeKeep', value)}
+                options={[
+                  { value: 1, label: 'Collection · garder 1' },
+                  { value: PLAYSET, label: 'Playset · garder 4' },
+                ]}
+              />
+              {sale.length > 0 && (
+                <span className="text-xs text-slate-400 tabular-nums">
+                  <b className="text-white">{selectedCopies.toLocaleString('fr-BE')}</b> à vendre
+                  {prices.status === 'ready' && ` · ${prices.format(selected.reduce((s, i) => s + i.qty * (i.price ?? 0), 0))}`}
+                </span>
+              )}
+            </div>
             {cards.length === 0 ? (
               <p className="text-sm text-slate-500">Aucune carte de ta collection ne quitte le Core.</p>
+            ) : sale.length === 0 ? (
+              <p className="text-sm text-slate-500">Rien à vendre : tu ne gardes que ce que tu as choisi de conserver.</p>
             ) : (
-              <div data-preview-group>
-                <CardGrid
-                  items={cards}
-                  className="space-y-0.5 -mx-2"
-                  render={(e) => (
-                    <div key={e.key} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-white/[0.03]">
-                      <CardThumb card={e.card} className="w-8 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm text-slate-200 truncate">
-                          <b className="tabular-nums">{e.total}×</b> {cardLang.fullName(e.card)}
-                          {e.foil > 0 && <span className="foil-text text-xs font-semibold"> · {e.foil} foil</span>}
+              <div className="space-y-3">
+                {sale.map((g) => {
+                  const on = !excluded.has(g.set);
+                  return (
+                    <div key={g.set} className="rounded-xl bg-slate-950/40 ring-1 ring-inset ring-white/5">
+                      <label className="flex items-center gap-2.5 px-3 py-2.5 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={() => toggleChapter(g.set)}
+                          className="w-4 h-4 accent-indigo-500"
+                        />
+                        <span className={`flex-1 min-w-0 truncate text-sm font-semibold ${on ? 'text-white' : 'text-slate-500'}`}>
+                          {g.set} · {g.name}
+                        </span>
+                        <span className="text-xs tabular-nums text-slate-400 whitespace-nowrap">
+                          {plural(g.copies, 'carte')}
+                          {prices.status === 'ready' && ` · ${prices.format(g.value)}`}
+                        </span>
+                      </label>
+                      {on && (
+                        <div data-preview-group className="px-1 pb-2">
+                          <CardGrid
+                            items={g.items}
+                            className="space-y-0.5"
+                            render={(i) => (
+                              <div key={i.id} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-white/[0.03]">
+                                <CardThumb card={i.card} className="w-8 flex-shrink-0" />
+                                <div className="flex-1 min-w-0 text-sm text-slate-200 truncate">
+                                  <b className="tabular-nums">{i.qty}×</b> {cardLang.fullName(i.card)}
+                                  <span className="text-xs text-slate-500"> · n° {i.card.number}</span>
+                                  {i.foil && <span className="foil-text text-xs font-semibold"> · foil</span>}
+                                </div>
+                                <span className="text-xs tabular-nums text-slate-400">
+                                  {i.price ? prices.format(i.qty * i.price) : '—'}
+                                </span>
+                              </div>
+                            )}
+                          />
                         </div>
-                        {e.decks.length > 0 && (
-                          <div className="text-[11px] text-amber-300/80 truncate">
-                            Joué dans {e.decks.map((d) => `${d.deck.name} (${d.qty})`).join(', ')}
-                          </div>
-                        )}
-                      </div>
-                      <span className="text-xs tabular-nums text-slate-400">{e.value ? prices.format(e.value) : '—'}</span>
+                      )}
                     </div>
-                  )}
-                />
+                  );
+                })}
               </div>
             )}
           </Panel>
