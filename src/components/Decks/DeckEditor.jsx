@@ -16,6 +16,8 @@ import {
   LockOpen,
   Menu as MenuIcon,
   FlaskConical,
+  ClipboardPaste,
+  ExternalLink,
 } from 'lucide-react';
 import Menu from '../ui/Menu';
 import CardThumb from '../ui/CardThumb';
@@ -29,6 +31,7 @@ import DeckVersions from './DeckVersions';
 import HandSimulator from './HandSimulator';
 import DeckProfile from './DeckProfile';
 import DeckImageModal from './DeckImageModal';
+import DeckListModal from './DeckListModal';
 import { useStore } from '../../hooks/storeContext';
 import { useCatalog } from '../../hooks/catalogContext';
 import { useCollection } from '../../hooks/useCollection';
@@ -41,6 +44,13 @@ import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { useToast } from '../ui/toastContext';
 import SharedCardsPanel from './SharedCardsPanel';
 import { DeckTagPicker } from './DeckTags';
+
+/** The deck's source as a link to open: "inkdecks.com/…" gets its https://. */
+const sourceLink = (url) => {
+  const value = url?.trim();
+  if (!value) return null;
+  return /^https?:\/\//i.test(value) ? value : `https://${value}`;
+};
 
 const TABS = [
   { key: 'list', label: 'Liste' },
@@ -122,6 +132,8 @@ const DeckEditor = ({ deck, onBack, onOpenSidebar, onLocate, onDelete }) => {
   const collection = useCollection();
   const [tab, setTab] = useState('list');
   const [imageOpen, setImageOpen] = useState(false);
+  const [listOpen, setListOpen] = useState(false);
+  const source = sourceLink(deck.sourceUrl);
   // On a phone the deck's name needs the room: "Simuler" goes in the menu
   const wide = useMediaQuery('(min-width: 640px)');
   const cardLang = useCardLang();
@@ -244,6 +256,11 @@ const DeckEditor = ({ deck, onBack, onOpenSidebar, onLocate, onDelete }) => {
                       onClick: () => setLocked(!deck.locked),
                     }
                   : null,
+                {
+                  label: 'Mettre à jour la liste',
+                  icon: ClipboardPaste,
+                  onClick: () => setListOpen(true),
+                },
                 {
                   label: 'Exporter en image',
                   icon: ImageDown,
@@ -375,11 +392,33 @@ const DeckEditor = ({ deck, onBack, onOpenSidebar, onLocate, onDelete }) => {
                     placeholder={deck.kind === 'reference' ? 'Archétype, résultat en tournoi, plan de jeu… (lu par l’assistant IA)' : 'Plan de jeu, mulligans, matchups…'}
                     className="field text-xs scrollbar-thin"
                   />
-                  {deck.sourceUrl && (
-                    <a href={deck.sourceUrl} target="_blank" rel="noopener noreferrer" className="block mt-1.5 text-xs text-indigo-300 hover:text-white truncate">
-                      {deck.sourceUrl}
-                    </a>
-                  )}
+                </div>
+                <div>
+                  <label className="label" htmlFor="deck-source">
+                    Source
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      id="deck-source"
+                      type="url"
+                      value={deck.sourceUrl ?? ''}
+                      onChange={(e) => updateDeck(deck.id, { sourceUrl: e.target.value })}
+                      placeholder="https://… (Dreamborn, Inkdecks…)"
+                      className="field text-xs"
+                    />
+                    {source && (
+                      <a
+                        href={source}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-icon flex-shrink-0"
+                        title="Ouvrir la source"
+                        aria-label="Ouvrir la source"
+                      >
+                        <ExternalLink size={15} />
+                      </a>
+                    )}
+                  </div>
                 </div>
               </aside>
             </div>
@@ -404,6 +443,7 @@ const DeckEditor = ({ deck, onBack, onOpenSidebar, onLocate, onDelete }) => {
         </div>
       </div>
       <DeckImageModal isOpen={imageOpen} onClose={() => setImageOpen(false)} deck={deck} analysis={analysis} />
+      <DeckListModal isOpen={listOpen} onClose={() => setListOpen(false)} deck={deck} />
     </div>
   );
 };

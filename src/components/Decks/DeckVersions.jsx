@@ -65,8 +65,8 @@ const DeckVersions = ({ deck }) => {
       </form>
 
       <p className="text-xs text-slate-500">
-        Une version est gardée automatiquement avant chaque modification proposée par l'assistant IA et avant chaque
-        restauration ({deck.versions?.length ?? 0} sur 15 max).
+        Une version est gardée automatiquement avant chaque modification proposée par l'assistant IA, chaque mise à jour
+        de la liste et chaque restauration ({deck.versions?.length ?? 0} sur 15 max).
       </p>
 
       {versions.length === 0 && (
