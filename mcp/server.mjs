@@ -35,6 +35,14 @@ import { analyzeDeck, parseDeckList, formatDeckList } from '../src/utils/deckRul
 import { formatDeckProfile } from '../src/utils/deckProfile.js';
 import { getDeckTags } from '../src/utils/deckTags.js';
 import { getWantList } from '../src/utils/wantList.js';
+import { getSurplusCopies, getListedCopies } from '../src/utils/trades.js';
+import { getSaleLines } from '../src/utils/cardmarketExport.js';
+import {
+  CARDMARKET_SYNC_FILE,
+  CARDMARKET_ACTIONS,
+  applyCardmarketEvents,
+  getCardmarketPlan,
+} from '../src/utils/cardmarketSync.js';
 import { getBinderStats, getLocation } from '../src/utils/calculations.js';
 import { getGame, getLorcanaSetName, setKnownLorcanaSets, withFrenchNames, LORCANA_RARITIES } from '../src/data/games.js';
 
@@ -99,6 +107,10 @@ const loadBackup = async () => {
       deckTags: data.deckTags ?? [],
       pulls: data.pulls ?? [],
       allocations: data.allocations ?? {},
+      deckGroups: data.deckGroups ?? [],
+      listings: data.listings ?? {},
+      sellFoil: data.sellFoil ?? {},
+      cardmarketSync: data.cardmarketSync ?? { seq: 0, at: null },
       prefs: data.prefs ?? {},
       exportedAt: data.exportedAt ?? null,
     },
@@ -187,12 +199,51 @@ const loadCatalog = () => {
 };
 
 /** Backup + catalog + owned cards, rebuilt on each call (cheap, and always matches the newest save). */
+// ---------------------------------------------------------------------------
+// Cardmarket journal: the only file the server writes (see src/utils/cardmarketSync.js)
+
+/** The journal sits next to the backups, in the folder the app writes its auto backup to. */
+const journalFile = async () => {
+  const target = backupTarget();
+  const stat = await fs.stat(target).catch(() => null);
+  return path.join(stat?.isFile() ? path.dirname(target) : target, CARDMARKET_SYNC_FILE);
+};
+
+const readJournal = async () => {
+  try {
+    const data = JSON.parse(await fs.readFile(await journalFile(), 'utf8'));
+    return Array.isArray(data?.events) ? data.events : [];
+  } catch {
+    return [];
+  }
+};
+
+/** Writes the journal at once (temporary file, then rename), so the app never reads half a file. */
+const writeJournal = async (events) => {
+  const file = await journalFile();
+  const tmp = `${file}.tmp`;
+  await fs.writeFile(tmp, JSON.stringify({ app: 'folio', events }, null, 2));
+  await fs.rename(tmp, file);
+};
+
 const getContext = async () => {
-  const [backup, index] = await Promise.all([loadBackup(), loadCatalog()]);
+  const [backup, index, journal] = await Promise.all([loadBackup(), loadCatalog(), readJournal()]);
   const { binders, pulls, decks, allocations } = backup.data;
   const collection = buildCollection(binders, index, pulls);
-  // Copies split between decks in the app: each deck counts its own and the shared ones
-  return { ...backup.data, file: backup.file, index, collection, allocation: getCopyAllocation(decks, collection, allocations) };
+  // Journal events the app has not applied yet: the server sees the listings as they will be
+  const pending = journal.filter((e) => e.seq > (backup.data.cardmarketSync?.seq ?? 0));
+  const listings = applyCardmarketEvents(backup.data.listings, pending);
+  return {
+    ...backup.data,
+    listings,
+    journal,
+    pending,
+    file: backup.file,
+    index,
+    collection,
+    // Copies split between decks in the app: each deck counts its own and the shared ones
+    allocation: getCopyAllocation(decks, collection, allocations),
+  };
 };
 
 // ---------------------------------------------------------------------------
@@ -299,7 +350,7 @@ const byCost = (a, b) => (a.card?.cost ?? 99) - (b.card?.cost ?? 99) || a.name.l
 // Server
 
 const server = new McpServer(
-  { name: 'folio', version: '0.1.0' },
+  { name: 'folio', version: '0.2.0' },
   {
     instructions:
       "Collection de cartes Disney Lorcana de l'utilisateur, rangée dans des fardes (classeurs) Folio, et ses decks. " +
@@ -596,6 +647,145 @@ tool(
     }
     return lines.join('\n');
   }
+);
+
+tool(
+  'surplus_cards',
+  {
+    title: 'Cartes en trop à revendre',
+    description:
+      'Copies en trop rangées dans les fardes, avec leur pochette : au-delà d’un exemplaire par pochette (ou d’un playset, selon le réglage de l’app) et de ce que jouent les decks. Une copie reste toujours dans chaque pochette.',
+    inputSchema: {
+      limit: z.number().int().min(1).max(500).optional().describe('Nombre max de lignes (200 par défaut)'),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ limit = 200 }) => {
+    const { binders, decks, collection, deckGroups = [], listings = {}, sellFoil = {}, prefs = {} } = await getContext();
+    const copies = getSurplusCopies(collection, decks, { keep: prefs.tradeKeep ?? 1, groups: deckGroups, listings, sellFoil });
+    if (!copies.length) return 'Aucune carte en trop dans les fardes.';
+    const order = new Map(binders.map((b, i) => [b.id, i]));
+    copies.sort(
+      (a, b) =>
+        order.get(a.binder.id) - order.get(b.binder.id) || a.location.page - b.location.page || Number(a.cardNumber) - Number(b.cardNumber)
+    );
+    const total = copies.reduce((s, c) => s + c.qty, 0);
+    const shown = copies.slice(0, limit);
+    return [
+      `${plural(total, 'copie')} en trop sur ${plural(new Set(copies.map((c) => c.key)).size, 'carte')}${shown.length < copies.length ? `, ${shown.length} lignes affichées` : ''}.`,
+      ...shown.map(
+        (c) =>
+          `${c.qty}× ${cite(c.card)}${c.foil ? ' foil' : ''} — ${rarityLabel(c.card.rarity)} — ${formatLocation(c.binder, c.cardNumber)}${c.listed ? ` — ${c.listed} déjà en vente` : ''}`
+      ),
+    ].join('\n');
+  }
+);
+
+/** A listing as Claude needs it on Cardmarket: product line, variant, where it sits in Folio. */
+const describeListing = (listed, index, prefs) => {
+  if (!listed.card) return `pochette n° ${listed.cardNumber} vidée depuis la mise en vente`;
+  const [line] = getSaleLines([{ card: listed.card, foil: listed.foil, qty: 1 }], index);
+  const language = (prefs.cardLanguage ?? 'fr') === 'en' ? 'anglais' : 'français';
+  return `${cite(listed.card)} — Cardmarket : « ${line.replace(/^1 /, '').replace(' *Foil*', '')} » — ${listed.foil ? 'foil' : 'normale'}, ${language}`;
+};
+
+tool(
+  'cardmarket_plan',
+  {
+    title: 'Plan de synchro Cardmarket',
+    description:
+      'Ce qu’il faut faire sur Cardmarket pour suivre Folio : copies à mettre en vente, à retirer de la vente, et copies que Cardmarket devrait afficher (à comparer au stock et aux ventes). Chaque ligne a un listing_id à passer à cardmarket_record après chaque action faite sur le site.',
+    annotations: { readOnlyHint: true },
+  },
+  async () => {
+    const { index, collection, decks, listings, pending, prefs, deckGroups, sellFoil, exportedAt } = await getContext();
+    const surplus = getSurplusCopies(collection, decks, { keep: prefs.tradeKeep ?? 1, groups: deckGroups, listings, sellFoil });
+    const byId = new Map(getListedCopies(collection, listings, surplus).map((l) => [l.id, l]));
+    const plan = getCardmarketPlan(listings);
+    const line = ({ id, qty, price }, warnDecks = false) => {
+      const listed = byId.get(id);
+      const warn = warnDecks && listed?.needed > 0 ? ` — ATTENTION : ${listed.needed} utilisée(s) par un deck, ne pas la mettre en vente` : '';
+      return `- [${id}] ${qty}× ${listed ? describeListing(listed, index, prefs) : id}${price != null ? ` — en ligne à ${price} €` : ''}${warn}`;
+    };
+    const section = (title, items, empty, warnDecks = false) => [
+      ``,
+      `${title} :`,
+      ...(items.length ? items.map((item) => line(item, warnDecks)) : [`  ${empty}`]),
+    ];
+    return [
+      `Sauvegarde Folio du ${exportedAt ?? '?'} · ${plural(pending.length, 'action')} Cardmarket pas encore relue(s) par Folio.`,
+      ...section('À mettre en vente sur Cardmarket', plan.toList, 'rien', true),
+      ...section('À retirer de la vente sur Cardmarket', plan.toRemove, 'rien'),
+      ...section(
+        'Déjà en vente sur Cardmarket d’après Folio (vérifie le stock et les ventes : vendues → sold, absentes du stock sans vente → delisted)',
+        plan.online,
+        'rien'
+      ),
+      ...section('Vendues, à sortir des fardes dans Folio (rien à faire sur Cardmarket)', plan.sold, 'rien'),
+    ].join('\n');
+  }
+);
+
+tool(
+  'cardmarket_record',
+  {
+    title: 'Noter une action Cardmarket',
+    description:
+      'Enregistre dans Folio ce qui vient d’être fait ou constaté sur Cardmarket, après coup uniquement : listed (mise en vente faite, avec le prix), removed (retrait fait à la demande de Folio), sold (vendue, vue dans les ventes), delisted (retirée du stock Cardmarket par l’utilisateur : Folio arrête de la vendre). Folio applique ces actions à la prochaine lecture (sauvegarde auto activée).',
+    inputSchema: {
+      events: z
+        .array(
+          z.object({
+            listing_id: z.string().describe('listing_id donné par cardmarket_plan'),
+            action: z.enum(CARDMARKET_ACTIONS),
+            qty: z.number().int().min(1),
+            price: z.number().min(0).optional().describe('Prix unitaire en euros (listed)'),
+          })
+        )
+        .min(1),
+    },
+  },
+  async ({ events }) => {
+    const { listings, journal, cardmarketSync } = await getContext();
+    const unknown = events.filter((e) => !listings[e.listing_id]);
+    if (unknown.length) throw new Error(`listing_id inconnu(s) : ${unknown.map((e) => e.listing_id).join(', ')}. Relance cardmarket_plan.`);
+    const applied = cardmarketSync?.seq ?? 0;
+    let seq = Math.max(applied, ...journal.map((e) => e.seq));
+    const at = Date.now();
+    const added = events.map((e) => ({
+      seq: ++seq,
+      at,
+      listingId: e.listing_id,
+      action: e.action,
+      qty: e.qty,
+      ...(e.price != null && { price: e.price }),
+    }));
+    // Events the app already applied are in the backup: no need to keep them
+    await writeJournal([...journal.filter((e) => e.seq > applied), ...added]);
+    const plan = getCardmarketPlan(applyCardmarketEvents(listings, added));
+    return [
+      `${plural(added.length, 'action notée', 'actions notées')} pour Folio.`,
+      `Reste : ${plural(plan.toList.reduce((s, x) => s + x.qty, 0), 'copie')} à mettre en vente, ${plural(plan.toRemove.reduce((s, x) => s + x.qty, 0), 'copie')} à retirer.`,
+    ].join('\n');
+  }
+);
+
+const SKILL_FILE = new URL('./skills/cardmarket-sales/SKILL.md', import.meta.url);
+
+server.registerPrompt(
+  'vendre_sur_cardmarket',
+  {
+    title: 'Vendre sur Cardmarket',
+    description: 'Synchronise les cartes en vente dans Folio avec ton stock Cardmarket, avec Claude in Chrome.',
+  },
+  async () => ({
+    messages: [
+      {
+        role: 'user',
+        content: { type: 'text', text: (await fs.readFile(SKILL_FILE, 'utf8')).replace(/^---[\s\S]*?---\s*/, '') },
+      },
+    ],
+  })
 );
 
 tool(

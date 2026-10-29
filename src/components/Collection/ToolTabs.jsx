@@ -1,15 +1,12 @@
 import { useMemo } from 'react';
-import { Sparkles, Layers, Repeat } from 'lucide-react';
+import { Sparkles, Layers } from 'lucide-react';
 import ProgressBar from '../ui/ProgressBar';
 import CardThumb from '../ui/CardThumb';
 import CopyButton from '../ui/CopyButton';
-import { Panel, CompletionRow, CardGrid, Segmented } from './CollectionParts';
-import { useStore } from '../../hooks/storeContext';
-import { useCardLang } from '../../hooks/useCardLang';
+import { Panel, CompletionRow, CardGrid } from './CollectionParts';
 import { INKS } from '../../utils/catalog';
 import { LORCANA_RARITIES, getLorcanaSetName } from '../../data/games';
 import { getPocketPrintings, getPlaysetCards, matchesCard } from '../../utils/collectionFilters';
-import { getKeptCopies } from '../../utils/trades';
 
 const PLAYSET = 4;
 
@@ -172,95 +169,6 @@ export const PlaysetsTab = ({ ctx }) => {
             </div>
           )}
         />
-      )}
-    </Panel>
-  );
-};
-
-/**
- * Copies beyond what is kept: one in the binder plus the decks' copies, or a playset that covers
- * the decks, and the locked decks' copies on top (see getKeptCopies).
- */
-export const DoublesTab = ({ ctx }) => {
-  const { prefs, setPref } = useStore();
-  const cardLang = useCardLang();
-  const { collection, usage, filters, query } = ctx;
-  const keep = prefs.tradeKeep ?? 1;
-
-  const doubles = useMemo(() => {
-    // The chapters and binders filters keep a card when one of its copies is there
-    const cardFilters = { ...filters, sets: [] };
-    return [...collection.entries.values()]
-      .filter(
-        (e) =>
-          matchesCard(e.card, cardFilters, query, ctx) &&
-          (!filters.sets.length || e.copies.some((c) => filters.sets.includes(c.card.set))) &&
-          (!filters.binders.length || e.copies.some((c) => filters.binders.includes(c.binder.id))) &&
-          (!filters.foil || e.foil > 0)
-      )
-      .map((e) => {
-        const uses = usage.get(e.key) ?? [];
-        const used = uses.reduce((s, u) => s + u.qty, 0);
-        return { ...e, used, surplus: e.total - getKeptCopies(uses, keep) };
-      })
-      .filter((e) => e.surplus > 0)
-      .sort((a, b) => b.surplus - a.surplus || cardLang.fullName(a.card).localeCompare(cardLang.fullName(b.card)));
-  }, [collection, usage, keep, filters, query, ctx, cardLang]);
-
-  // Doubles go to other players: in the card language
-  const doublesText = doubles.map((d) => `${d.surplus} ${cardLang.fullName(d.card)}`).join('\n');
-  const copies = doubles.reduce((s, d) => s + d.surplus, 0);
-
-  return (
-    <Panel
-      icon={Repeat}
-      title="Doubles à échanger"
-      hint={
-        keep >= PLAYSET
-          ? 'Au-delà d’un playset par carte (tes decks puisent dedans).'
-          : 'Au-delà d’un exemplaire gardé en farde, plus les copies utilisées par tes decks.'
-      }
-      action={doubles.length > 0 && <CopyButton text={doublesText} label="Copier" toast="Doubles copiés" />}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <Segmented
-          label="Copies gardées"
-          value={keep}
-          onChange={(value) => setPref('tradeKeep', value)}
-          options={[
-            { value: 1, label: 'Collection · garder 1' },
-            { value: PLAYSET, label: 'Playset · garder 4' },
-          ]}
-        />
-        {doubles.length > 0 && (
-          <span className="text-xs text-slate-400 tabular-nums">
-            <b className="text-white">{copies}</b> copie{copies > 1 ? 's' : ''} · {doubles.length} carte{doubles.length > 1 ? 's' : ''}
-          </span>
-        )}
-      </div>
-      {doubles.length === 0 ? (
-        <Empty>Aucun double à échanger pour l’instant.</Empty>
-      ) : (
-        <ul className="divide-y divide-white/5">
-          {doubles.map((d) => (
-            <li key={d.key} className="flex items-center gap-3 py-2">
-              <CardThumb card={d.card} className="w-10 flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <div className="text-sm text-white truncate">{cardLang.fullName(d.card)}</div>
-                <div className="text-[11px] text-slate-500 truncate">
-                  {d.copies.map((c) => `${c.binder.name} · p. ${c.location.page} (${c.normal + c.foil})`).join(' · ')}
-                  {d.used > 0 && ` · ${d.used} en deck`}
-                </div>
-              </div>
-              {d.foil > 0 && (
-                <span className="foil-text text-[11px] font-semibold whitespace-nowrap">
-                  {d.foil} foil{d.foil > 1 ? 's' : ''}
-                </span>
-              )}
-              <span className="text-sm font-bold text-emerald-300 tabular-nums whitespace-nowrap">×{d.surplus}</span>
-            </li>
-          ))}
-        </ul>
       )}
     </Panel>
   );

@@ -3,6 +3,7 @@ import { motion, MotionConfig } from 'motion/react';
 import { Library, Menu as MenuIcon, Hash, MousePointerClick, Download, Loader2 } from 'lucide-react';
 import { useBinders } from './hooks/useBinders';
 import { useAutoBackup } from './hooks/useAutoBackup';
+import { useCardmarketSync } from './hooks/useCardmarketSync';
 import { StoreContext } from './hooks/storeContext';
 import CatalogProvider from './hooks/CatalogProvider';
 import Sidebar from './components/Sidebar/Sidebar';
@@ -135,6 +136,7 @@ const AppContent = () => {
     setView,
   } = store;
   const autoBackup = useAutoBackup(state);
+  useCardmarketSync(autoBackup, store.applyCardmarketJournal, notify);
 
   // Cmd/Ctrl+K opens the card search from anywhere
   useEffect(() => {

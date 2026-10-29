@@ -113,7 +113,7 @@ export const resolveProposedCards = (input, index) => {
  * Builds the function that runs a tool call against the user's data.
  * @returns {(name: string, input: object) => string} text result; throws on invalid input
  */
-export const createToolRunner = ({ index, collection, decks, allocations = {}, prices, tradeKeep }) => {
+export const createToolRunner = ({ index, collection, decks, allocations = {}, deckGroups = [], listings = {}, sellFoil = {}, prices, tradeKeep }) => {
   // Copies the user split between decks: each deck only counts its own and the shared ones
   const { availableFor, unlockedFor, shared } = getCopyAllocation(decks, collection, allocations);
   const owned = (card) => {
@@ -206,7 +206,7 @@ export const createToolRunner = ({ index, collection, decks, allocations = {}, p
       if (!card) return `Carte ${input.card_id} introuvable.`;
       const target = prices.getPrice(card, Boolean(input.foil));
       if (target == null) return `Pas de prix connu pour ${card.fullName}.`;
-      const haves = getTradeableSurplus(collection, decks, tradeKeep, prices.getPrice);
+      const haves = getTradeableSurplus(collection, decks, tradeKeep, prices.getPrice, { groups: deckGroups, listings, sellFoil });
       const combos = suggestTrades(target, haves);
       if (combos.length === 0) return `${card.fullName} vaut ${prices.format(target)} : aucun échange équilibré avec les doubles actuels.`;
       return [

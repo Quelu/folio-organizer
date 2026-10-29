@@ -12,7 +12,7 @@ import { useDeckColor } from '../../hooks/useDeckColor';
 import { getMainPrinting } from '../../utils/catalog';
 import { matchesCard } from '../../utils/collectionFilters';
 import { getDeckWantsLines, getSaleLines, splitWantsLists } from '../../utils/cardmarketExport';
-import { getWantList, summarizeWants, suggestDeckGroups, getDeckSetSignature } from '../../utils/wantList';
+import { getWantList, summarizeWants, suggestDeckGroups, getDeckSetSignature, getWantCost } from '../../utils/wantList';
 
 /** Section colors: binders violet, decks orange, a copy serving both teal. */
 const TONES = {
@@ -179,13 +179,7 @@ const WantListTab = ({ ctx, prices, onOpenDeck }) => {
   }, [list, filters, query, ctx, lens, index, cardLang]);
 
   const priceOf = (card) => (card ? prices.getPrice(card) : null);
-  const cost = shown.cards.reduce(
-    (s, c) =>
-      s +
-      c.pockets.reduce((p, w) => p + (priceOf(w.card) ?? 0), 0) +
-      (c.copies - c.pockets.length) * (priceOf(getMainPrinting(index, c.key)) ?? 0),
-    0
-  );
+  const cost = getWantCost(shown.cards, index, prices.getPrice);
 
   // Pockets in their chapter's printing, the decks' extra copies as the newest regular printing
   const cardmarketLists = splitWantsLists([

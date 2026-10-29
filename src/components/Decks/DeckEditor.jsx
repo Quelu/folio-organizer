@@ -43,6 +43,7 @@ import { useDeckColor } from '../../hooks/useDeckColor';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { useToast } from '../ui/toastContext';
 import SharedCardsPanel from './SharedCardsPanel';
+import ListedCardsBanner from './ListedCardsBanner';
 import { DeckTagPicker } from './DeckTags';
 
 /** The deck's source as a link to open: "inkdecks.com/…" gets its https://. */
@@ -332,6 +333,7 @@ const DeckEditor = ({ deck, onBack, onOpenSidebar, onLocate, onDelete }) => {
 
       <div className="flex-1 overflow-auto scrollbar-thin px-4 sm:px-6 py-5 border-t border-white/5">
         <div className="max-w-6xl mx-auto">
+          {deck.kind !== 'reference' && <ListedCardsBanner deck={deck} />}
           {(tab === 'list' || tab === 'missing') && deck.kind !== 'reference' && (
             <div className="mb-5">
               <SharedCardsPanel

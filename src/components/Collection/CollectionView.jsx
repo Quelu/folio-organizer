@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu as MenuIcon, Loader2, RotateCcw, Search, SlidersHorizontal, X, LayoutGrid, Sparkles, Layers, Repeat, Heart } from 'lucide-react';
+import { Menu as MenuIcon, Loader2, RotateCcw, Search, SlidersHorizontal, X, LayoutGrid, Sparkles, Layers, Coins, Heart } from 'lucide-react';
 import { useStore } from '../../hooks/storeContext';
 import { useCatalog } from '../../hooks/catalogContext';
 import { useCollection } from '../../hooks/useCollection';
@@ -19,7 +19,8 @@ import {
 } from '../../utils/collectionFilters';
 import FilterPanel, { ActiveFilters } from './FilterPanel';
 import CardsExplorer from './CardsExplorer';
-import { CompletionTab, PlaysetsTab, DoublesTab } from './ToolTabs';
+import { CompletionTab, PlaysetsTab } from './ToolTabs';
+import ResaleTab from './ResaleTab';
 import WantListTab from './WantListTab';
 
 const CARD_FILTERS = ['sets', 'inks', 'costs', 'rarities', 'types', 'inkwell', 'core'];
@@ -32,8 +33,8 @@ const TABS = [
   { key: 'cards', label: 'Cartes', icon: LayoutGrid, filters: ALL_FILTERS },
   { key: 'completion', label: 'Complétion', icon: Sparkles, filters: CARD_FILTERS },
   { key: 'playsets', label: 'Playsets', icon: Layers, filters: CARD_FILTERS },
-  { key: 'doubles', label: 'Doubles', icon: Repeat, filters: [...CARD_FILTERS, 'foil', 'binders'] },
   { key: 'wants', label: 'Want list', icon: Heart, filters: [...CARD_FILTERS, 'decks', 'binders'] },
+  { key: 'resale', label: 'Revente', icon: Coins, filters: [...CARD_FILTERS, 'foil', 'binders'] },
 ];
 
 const DEFAULT_EXPLORER = { mode: 'owned', sort: 'number', reverse: false, group: 'none', layout: 'grid', size: 'm' };
@@ -183,8 +184,8 @@ const CollectionView = ({ onOpenSidebar }) => {
         return <CompletionTab ctx={ctx} onExploreMissing={exploreMissing} />;
       case 'playsets':
         return <PlaysetsTab ctx={ctx} />;
-      case 'doubles':
-        return <DoublesTab ctx={ctx} />;
+      case 'resale':
+        return <ResaleTab ctx={ctx} prices={prices} />;
       case 'wants':
         return <WantListTab ctx={ctx} prices={prices} onOpenDeck={(deckId) => setView({ kind: 'decks', deckId })} />;
       default:

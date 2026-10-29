@@ -219,3 +219,32 @@ export const summarizeWants = (pockets, lines, index) => {
   }
   return { cards, totals };
 };
+
+/**
+ * Estimated cost of a buy list (summarizeWants cards): each pocket in its printing, the decks'
+ * extra copies as the regular printing.
+ * @param {(card: object) => number|null} getPrice
+ */
+export const getWantCost = (cards, index, getPrice) =>
+  cards.reduce(
+    (sum, c) =>
+      sum +
+      c.pockets.reduce((s, w) => s + (getPrice(w.card) ?? 0), 0) +
+      (c.copies - c.pockets.length) * ((index && getPrice(getMainPrinting(index, c.key))) ?? 0),
+    0
+  );
+
+/**
+ * Copies the decks need of each card: the most one deck of a unit plays, units added up (see
+ * getDeckUnits). The same count as the want list, so a card is never both wanted and in surplus.
+ * @returns {Map<string, number>} by full-name key
+ */
+export const getDeckNeeds = (decks, groups = []) => {
+  const needs = new Map();
+  for (const unit of getDeckUnits(decks, groups)) {
+    const unitNeeds = new Map();
+    for (const deck of unit.decks) for (const c of deck.cards) unitNeeds.set(c.key, Math.max(unitNeeds.get(c.key) ?? 0, c.qty));
+    for (const [key, qty] of unitNeeds) needs.set(key, (needs.get(key) ?? 0) + qty);
+  }
+  return needs;
+};

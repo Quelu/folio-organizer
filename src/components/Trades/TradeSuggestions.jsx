@@ -10,15 +10,15 @@ import CopyButton from '../ui/CopyButton';
 
 /** Equal-value trades to get one missing card, from the user's surplus copies. */
 const TradeSuggestions = ({ card, foil = false }) => {
-  const { decks, prefs } = useStore();
+  const { decks, deckGroups, listings, sellFoil, prefs } = useStore();
   const cardLang = useCardLang();
   const collection = useCollection();
   const { status, getPrice, format, source } = usePrices();
   const keep = prefs.tradeKeep ?? 1;
 
   const haves = useMemo(
-    () => (status === 'ready' ? getTradeableSurplus(collection, decks, keep, getPrice) : []),
-    [status, collection, decks, keep, getPrice]
+    () => (status === 'ready' ? getTradeableSurplus(collection, decks, keep, getPrice, { groups: deckGroups, listings, sellFoil }) : []),
+    [status, collection, decks, keep, getPrice, deckGroups, listings, sellFoil]
   );
   const price = card ? getPrice(card, foil) : null;
   const combos = useMemo(() => (price ? suggestTrades(price, haves) : []), [price, haves]);
