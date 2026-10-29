@@ -94,7 +94,7 @@ const DeckRow = ({ deck, rotating, index, rotation, onOpen, onAsk }) => {
 
 /** The next Core rotation: decks losing cards and owned cards leaving Core, with their value. */
 const RotationView = ({ onOpenSidebar }) => {
-  const { decks, setView, prefs, setPref } = useStore();
+  const { decks, deckGroups, listings, sellFoil, setView, prefs, setPref } = useStore();
   const { index } = useCatalog();
   const collection = useCollection();
   const prices = usePrices();
@@ -124,7 +124,7 @@ const RotationView = ({ onOpenSidebar }) => {
       .sort((a, b) => b.value - a.value || a.card.fullName.localeCompare(b.card.fullName));
     // Copies to sell: beyond the kept ones, every deck counted (an Infinity deck keeps its copies)
     const groups = new Map();
-    for (const item of getTradeableSurplus(collection, decks, keep, prices.getPrice)) {
+    for (const item of getTradeableSurplus(collection, decks, keep, prices.getPrice, { groups: deckGroups, listings, sellFoil })) {
       if (!rotation.leaves(item.key)) continue;
       const set = String(item.card.set);
       if (!groups.has(set))
@@ -149,7 +149,7 @@ const RotationView = ({ onOpenSidebar }) => {
       }))
       .sort((a, b) => a.set.localeCompare(b.set, undefined, { numeric: true }));
     return { rotation, coreDecks, touched, cards, sale };
-  }, [index, decks, collection, prices, keep]);
+  }, [index, decks, collection, prices, keep, deckGroups, listings, sellFoil]);
 
   const header = (
     <header className="px-4 sm:px-6 pt-4 pb-4 border-b border-white/5">

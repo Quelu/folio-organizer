@@ -9,6 +9,7 @@ import {
   BookOpen,
   Square,
   ShoppingCart,
+  Heart,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import Menu from '../ui/Menu';
@@ -38,6 +39,7 @@ const BinderHeader = ({
   onExport,
   onResetExports,
   onCardmarket,
+  onWantList,
 }) => {
   const game = getGame(binder.gameType);
   const { unique, copies, foils, owned, outOfSet, progress } = getBinderStats(binder);
@@ -122,6 +124,9 @@ const BinderHeader = ({
                 </span>
               }
               items={[
+                binder.gameType === 'lorcana'
+                  ? { label: 'Voir dans la want list', icon: Heart, onClick: onWantList }
+                  : null,
                 binder.gameType === 'lorcana'
                   ? { label: 'Manquantes → Cardmarket', icon: ShoppingCart, onClick: onCardmarket }
                   : null,

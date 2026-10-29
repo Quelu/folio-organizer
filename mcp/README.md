@@ -4,7 +4,7 @@ Petit serveur [MCP](https://modelcontextprotocol.io) local qui donne à Claude D
 
 Il lit la **dernière sauvegarde** faite depuis Folio, le catalogue de cartes [Lorcast](https://lorcast.com) et les noms et textes français de [LorcanaJSON](https://lorcanajson.org). Les cartes sont citées en français, avec leur nom anglais entre parenthèses. Il réutilise les règles de l'app (collection multi-fardes, règles de construction de deck, liste de collecte) : les réponses sont les mêmes que dans Folio.
 
-Rien n'est modifié : le serveur ne fait que lire.
+Le serveur ne modifie jamais ta sauvegarde. Il n'écrit qu'un fichier, le journal des ventes Cardmarket (voir plus bas), que Folio relit.
 
 ## Installation
 
@@ -70,10 +70,37 @@ Si Claude Desktop ne trouve pas `node` (installé via nvm par exemple), mets le 
 | `get_deck` | Analyse d'un deck : courbe, encres, erreurs, cartes possédées ou manquantes |
 | `check_deck_list` | « Puis-je monter ce deck ? » : colle une liste trouvée en ligne |
 | `pull_list` | Où aller chercher chaque carte d'un deck, farde par farde, page par page |
+| `want_list` | Tout ce qui manque aux fardes et aux decks, compté une fois |
+| `surplus_cards` | Copies en trop rangées dans les fardes, avec leur pochette |
+| `cardmarket_plan` | Ce qu'il faut mettre en vente ou retirer sur Cardmarket pour suivre Folio |
+| `cardmarket_record` | Note dans Folio une action faite ou constatée sur Cardmarket |
 
 Les cartes sont citées `[chapitre-numéro] Nom - Version`, par exemple `[1-42] Elsa - Spirit of Winter`.
 
 Les prix viennent de Lorcast (TCGplayer, en dollars) : c'est un ordre de grandeur, pas le prix Cardmarket.
+
+## Vendre sur Cardmarket avec Claude in Chrome
+
+Dans l'onglet **Collection → Revente** de Folio, tu marques en vente les cartes à vendre à l'unité. Claude s'occupe ensuite de Cardmarket, sur ton compte déjà connecté dans Chrome :
+
+- il met en vente les cartes marquées dans Folio, après t'avoir montré le récapitulatif (prix, état, langue) et attendu ton accord ;
+- il retire de Cardmarket les cartes que tu as retirées de la vente dans Folio (mises dans un deck, par exemple) ;
+- il relève tes ventes, et les offres que tu as retirées toi-même sur Cardmarket, pour que Folio les suive.
+
+Folio relit ces changements tout seul : la **sauvegarde auto dans un dossier** doit être activée, sur le dossier lu par le serveur. Les cartes vendues se sortent ensuite des fardes dans Folio (Revente → En vente → « Vendues : les sortir »).
+
+Le serveur n'écrit que `folio-cardmarket-sync.json`, à côté des sauvegardes : un journal des actions faites sur Cardmarket. Folio l'applique une seule fois, et le serveur oublie les actions déjà reprises dans la sauvegarde.
+
+Pour lancer une synchro :
+
+- **Claude Desktop** : choisis le prompt « Vendre sur Cardmarket » du serveur folio (bouton +), avec Claude in Chrome activé ;
+- **Claude Code** : copie le skill dans tes skills, puis demande « vends mes cartes sur Cardmarket » :
+
+```bash
+cp -r mcp/skills/cardmarket-sales ~/.claude/skills/
+```
+
+Claude ne saisit jamais ton mot de passe, ne paie rien, ne touche pas aux autres offres de ton stock, et s'arrête sur un CAPTCHA. Cardmarket encadre l'usage d'outils automatisés sur son site : reste devant l'écran pendant la synchro.
 
 ## Exemples de questions
 

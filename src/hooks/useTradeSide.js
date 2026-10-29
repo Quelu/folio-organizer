@@ -2,7 +2,6 @@ import { useMemo } from 'react';
 import { useStore } from './storeContext';
 import { useCatalog } from './catalogContext';
 import { useCollection } from './useCollection';
-import { useCopyAllocation } from './useCopyAllocation';
 import { usePrices } from './usePrices';
 import { getOwnedPrintings } from '../utils/collectionFilters';
 import { getTradeableSurplus } from '../utils/trades';
@@ -18,11 +17,10 @@ export const DEFAULT_TRADE_WANTS = { specials: false, decks: true };
  * @returns {{ owned: object[], haves: object[], wants: object[] } | null} null until the catalog is loaded
  */
 export const useTradeSide = (binderIds = null) => {
-  const { binders, decks, prefs } = useStore();
+  const { binders, decks, deckGroups, allocations, listings, sellFoil, prefs } = useStore();
   const { index } = useCatalog();
   const collection = useCollection();
   const scoped = useCollection(binderIds);
-  const { availableFor } = useCopyAllocation();
   const { getPrice } = usePrices();
   const keep = prefs.tradeKeep ?? 1;
   const { specials, decks: withDecks } = { ...DEFAULT_TRADE_WANTS, ...prefs.tradeWants };
@@ -34,15 +32,16 @@ export const useTradeSide = (binderIds = null) => {
     const printings = getOwnedPrintings(scoped);
     return {
       owned: [...printings.values()],
-      haves: getTradeableSurplus(collection, decks, keep, getPrice).filter((h) => printings.has(h.card.id)),
+      haves: getTradeableSurplus(collection, decks, keep, getPrice, { groups: deckGroups, listings, sellFoil }).filter((h) => printings.has(h.card.id)),
       wants: getWants({
         binders: ids ? binders.filter((b) => ids.has(b.id)) : binders,
         decks: withDecks ? decks : [],
         index,
         collection,
-        availableFor,
+        groups: deckGroups,
+        allocations,
         specials,
       }),
     };
-  }, [index, scopeKey, scoped, collection, binders, decks, keep, getPrice, availableFor, specials, withDecks]);
+  }, [index, scopeKey, scoped, collection, binders, decks, keep, getPrice, deckGroups, allocations, listings, sellFoil, specials, withDecks]);
 };

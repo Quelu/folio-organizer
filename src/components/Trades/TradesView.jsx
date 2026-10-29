@@ -112,7 +112,7 @@ const Panel = ({ title, hint, items, selection, onSelect, format, empty, actions
 
 /** Equal-value trades: missing cards of a binder or deck against the user's surplus copies. */
 const FreeTrade = () => {
-  const { binders, decks, prefs, setPref } = useStore();
+  const { binders, decks, deckGroups, listings, sellFoil, prefs, setPref } = useStore();
   const cardLang = useCardLang();
   const { availableFor } = useCopyAllocation();
   const { index } = useCatalog();
@@ -160,8 +160,8 @@ const FreeTrade = () => {
   }, [index, source, binders, decks, collection, withSpecials, getPrice, availableFor]);
 
   const haves = useMemo(
-    () => (status === 'ready' ? getTradeableSurplus(collection, decks, keep, getPrice) : []),
-    [status, collection, decks, keep, getPrice]
+    () => (status === 'ready' ? getTradeableSurplus(collection, decks, keep, getPrice, { groups: deckGroups, listings, sellFoil }) : []),
+    [status, collection, decks, keep, getPrice, deckGroups, listings, sellFoil]
   );
 
   const wantTotal = total(wants, wanted);

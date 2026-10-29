@@ -18,7 +18,9 @@ const fileName = () => `folio-sauvegarde-auto-${new Date().toISOString().slice(0
  * The folder handle is kept in IndexedDB; after a reload the browser may ask again for the right
  * to write, which needs a click (resume).
  * @returns {{ supported: boolean, status: 'off'|'on'|'paused'|'error', folderName: string|null,
- *   savedAt: number|null, choose: () => Promise<boolean>, resume: () => Promise<void>, stop: () => Promise<void> }}
+ *   savedAt: number|null, choose: () => Promise<boolean>, resume: () => Promise<void>, stop: () => Promise<void>,
+ *   readFile: (name: string) => Promise<string|null> }} readFile: another file of the folder (the MCP
+ *   server's Cardmarket journal), null when missing or not readable
  */
 export const useAutoBackup = (state) => {
   const [folder, setFolder] = useState(null);
@@ -81,6 +83,19 @@ export const useAutoBackup = (state) => {
     return () => document.removeEventListener('visibilitychange', flush);
   }, []);
 
+  const readFile = useCallback(
+    async (name) => {
+      if (!folder || status !== 'on') return null;
+      try {
+        const file = await (await folder.getFileHandle(name)).getFile();
+        return await file.text();
+      } catch {
+        return null;
+      }
+    },
+    [folder, status]
+  );
+
   /** Asks for a folder and starts writing to it; false when the user cancels. */
   const choose = useCallback(async () => {
     try {
@@ -106,5 +121,5 @@ export const useAutoBackup = (state) => {
     setSavedAt(null);
   }, []);
 
-  return { supported, status, folderName: folder?.name ?? null, savedAt, choose, resume, stop };
+  return { supported, status, folderName: folder?.name ?? null, savedAt, choose, resume, stop, readFile };
 };

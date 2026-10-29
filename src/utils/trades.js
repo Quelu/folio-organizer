@@ -1,4 +1,5 @@
-import { getDeckUsage } from './collection.js';
+import { getDeckNeeds } from './wantList.js';
+import { getListedQty } from './cardmarketSync.js';
 import { getLocation, getPositionInPage } from './calculations.js';
 import { MAX_COPIES } from './deckRules.js';
 import { SPECIAL_RARITIES, baseNumber, findPocketCard } from './catalog.js';
@@ -30,68 +31,154 @@ export const getBinderMissing = (binder, index, withSpecials = false) => {
   return cards;
 };
 
-/** Takes up to n copies out of a pocket's counts, foils first. Returns how many were taken. */
-const reserve = (pocket, n) => {
-  const foil = Math.min(pocket.foil, n);
-  pocket.foil -= foil;
-  const normal = Math.min(pocket.normal, n - foil);
-  pocket.normal -= normal;
-  return foil + normal;
+/** Takes up to n copies out of a pocket's counts, foils first unless normalFirst. Returns how many were taken. */
+const reserve = (pocket, n, normalFirst = false) => {
+  const first = normalFirst ? 'normal' : 'foil';
+  const second = normalFirst ? 'foil' : 'normal';
+  const a = Math.min(pocket[first], n);
+  pocket[first] -= a;
+  const b = Math.min(pocket[second], n - a);
+  pocket[second] -= b;
+  return a + b;
 };
 
+/** Id of a binder pocket, for the pockets whose foil is sold rather than kept. */
+export const getPocketId = (binderId, cardNumber) => `${binderId}:${cardNumber}`;
+
 /**
- * Copies of a card kept out of trades:
- * - keep 1 (collection): 1 + the copies the user's decks play, the decks come on top of the binder copy;
- * - keep 4 (playset): max(4, the copies the decks play), since the decks play with the playset;
- * plus, either way, the copies of the locked decks, which never join the collection's copies.
- * @param {{ deck, qty }[]} uses the card's line of getDeckUsage
+ * Copies of a card kept: one in each binder pocket holding it (a playset of 4 with keep 4), or the
+ * copies the decks need when they need more, since the decks take their cards from the binders
+ * (the want list counts the same way, see getDeckNeeds).
+ * @param {{ copies: object[] }} entry the card's collection entry
+ * @param {number} deckNeed copies the decks need (getDeckNeeds)
  */
-export const getKeptCopies = (uses, keep) => {
-  let locked = 0;
-  let used = 0;
-  for (const { deck, qty } of uses) {
-    if (deck.locked) locked += qty;
-    else used += qty;
+export const getKeptCount = (entry, deckNeed, keep) =>
+  Math.max(keep >= MAX_COPIES ? keep : 1, entry.copies.length, deckNeed);
+
+/** Id of a pocket's normal or foil copies: listings (copies put on sale) refer to it. */
+export const getPocketCopyId = (binderId, cardNumber, foil) => `${binderId}:${cardNumber}:${foil ? 'foil' : 'normal'}`;
+
+/**
+ * Copies the user has in surplus, pocket by pocket: still in their binder (never the copies a deck
+ * took out), beyond the kept ones (getKeptCount). One copy always stays in each pocket, the foil
+ * first: a collection keeps its shiny copy and sells the normals, unless the user chose to sell
+ * that pocket's foil (sellFoil). The other kept copies come from
+ * the cheapest pockets, so the valuable extras are the ones offered.
+ *
+ * @param {object} collection from buildCollection
+ * @param {object[]} decks
+ * @param {{ keep?: number, groups?: object[], getPrice?: Function, listings?: object, sellFoil?: object }} [options]
+ *   groups: deck groups (see wantList.js); listings: { [pocketCopyId]: { qty, at } } copies on sale;
+ *   sellFoil: { [pocketId]: true } pockets keeping a normal copy, their foil sold
+ * @returns {{ id, key, card, foil: boolean, qty: number, listed: number, binder, cardNumber, location, price: number|null }[]}
+ *   listed: copies of qty already put on sale
+ */
+export const getSurplusCopies = (
+  collection,
+  decks,
+  { keep = 1, groups = [], getPrice = () => null, listings = {}, sellFoil = {} } = {}
+) => {
+  const needs = getDeckNeeds(decks, groups);
+  const items = [];
+  for (const entry of collection.entries.values()) {
+    // Copies a deck took out are taken from the normals first
+    const pockets = entry.copies
+      .map((copy) => {
+        const pulledNormal = Math.min(copy.pulled, copy.normal);
+        return { copy, normal: copy.normal - pulledNormal, foil: copy.foil - (copy.pulled - pulledNormal) };
+      })
+      .sort((a, b) => (getPrice(a.copy.card, false) ?? 0) - (getPrice(b.copy.card, false) ?? 0));
+
+    let rest = getKeptCount(entry, needs.get(entry.key) ?? 0, keep) - entry.pulled;
+    const normalFirst = ({ copy }) => Boolean(sellFoil[getPocketId(copy.binder.id, copy.cardNumber)]);
+    for (const pocket of pockets) rest -= reserve(pocket, Math.min(1, pocket.normal + pocket.foil), normalFirst(pocket));
+    for (const pocket of pockets) rest -= reserve(pocket, Math.max(0, rest), normalFirst(pocket));
+
+    for (const { copy, normal, foil: foils } of pockets) {
+      for (const foil of [false, true]) {
+        const qty = foil ? foils : normal;
+        if (qty <= 0) continue;
+        const id = getPocketCopyId(copy.binder.id, copy.cardNumber, foil);
+        items.push({
+          id,
+          key: entry.key,
+          card: copy.card,
+          foil,
+          qty,
+          listed: Math.min(qty, getListedQty(listings[id])),
+          // The pocket holds both variants: the user can choose which one stays
+          canSwap: copy.normal > 0 && copy.foil > 0,
+          sellsFoil: normalFirst({ copy }),
+          binder: copy.binder,
+          cardNumber: copy.cardNumber,
+          location: copy.location,
+          price: getPrice(copy.card, foil),
+        });
+      }
+    }
   }
-  return locked + (keep >= MAX_COPIES ? Math.max(keep, used) : keep + used);
+  return items;
 };
 
 /**
- * Copies the user can trade away, one item per printing and variant.
- *
- * Copies kept per card (full name, see getKeptCopies), the rest is tradeable (never negative).
- * The same rule drives the surplus of the collection stats. Reserved copies are taken from the
- * cheapest printings first, so the valuable extras stay tradeable, and foils first within a pocket:
- * a collection keeps its shiny copies, normals are traded first.
+ * The copies put on sale, with the ones no longer in surplus: a deck now plays them, or they left
+ * the binder. The user takes those off sale (on Cardmarket too).
+ * @param {object} collection from buildCollection
+ * @param {object} listings { [pocketCopyId]: { qty, at } }
+ * @param {object[]} surplus from getSurplusCopies
+ * @returns {{ id, key, card, binder, binderId, cardNumber, foil, qty: number, needed: number, at: number,
+ *   online: number, onlinePrice: number|null, sold: number }[]} needed: listed copies that are no longer surplus;
+ *   card null when the pocket is gone; online, onlinePrice: on Cardmarket at the last sync (see cardmarketSync.js);
+ *   sold: sold on Cardmarket, to take out; qty 0 while copies taken off sale are still on Cardmarket
+ */
+export const getListedCopies = (collection, listings, surplus) => {
+  const pockets = new Map();
+  for (const entry of collection.entries.values()) {
+    for (const copy of entry.copies) pockets.set(getPocketId(copy.binder.id, copy.cardNumber), copy);
+  }
+  const surplusOf = new Map(surplus.map((s) => [s.id, s.qty]));
+  return Object.entries(listings).map(([id, { qty, at, cardmarket, sold = 0 }]) => {
+    const [binderId, cardNumber, variant] = id.split(':');
+    const copy = pockets.get(getPocketId(binderId, cardNumber));
+    return {
+      id,
+      key: copy?.card.key ?? null,
+      card: copy?.card ?? null,
+      binder: copy?.binder ?? null,
+      binderId,
+      cardNumber,
+      foil: variant === 'foil',
+      qty,
+      needed: Math.max(0, qty - (surplusOf.get(id) ?? 0)),
+      at,
+      online: cardmarket?.qty ?? 0,
+      onlinePrice: cardmarket?.price ?? null,
+      sold,
+    };
+  });
+};
+
+/**
+ * Copies the user can trade away, one item per printing and variant: the surplus copies
+ * (getSurplusCopies) not put on sale.
  *
  * @param {object} collection from buildCollection
  * @param {object[]} decks
  * @param {number} keep copies kept per card
  * @param {(card: object, foil: boolean) => number|null} getPrice
+ * @param {{ groups?: object[], listings?: object, sellFoil?: object }} [options]
  * @returns {{ id, key, card, foil: boolean, qty: number, price: number|null }[]}
  */
-export const getTradeableSurplus = (collection, decks, keep, getPrice) => {
-  const usage = getDeckUsage(decks);
+export const getTradeableSurplus = (collection, decks, keep, getPrice, { groups = [], listings = {}, sellFoil = {} } = {}) => {
   const items = new Map();
-  for (const entry of collection.entries.values()) {
-    const pockets = entry.copies
-      .map((c) => ({ card: c.card, normal: c.normal, foil: c.foil }))
-      .sort((a, b) => (getPrice(a.card, false) ?? 0) - (getPrice(b.card, false) ?? 0));
-
-    let rest = getKeptCopies(usage.get(entry.key) ?? [], keep);
-    for (const pocket of pockets) rest -= reserve(pocket, rest);
-
-    for (const pocket of pockets) {
-      for (const foil of [false, true]) {
-        const qty = foil ? pocket.foil : pocket.normal;
-        if (qty <= 0) continue;
-        // Two binders of the same chapter hold the same printing: one item for both
-        const id = `${pocket.card.id}${foil ? '-foil' : ''}`;
-        const existing = items.get(id);
-        if (existing) existing.qty += qty;
-        else items.set(id, { id, key: entry.key, card: pocket.card, foil, qty, price: getPrice(pocket.card, foil) });
-      }
-    }
+  for (const copy of getSurplusCopies(collection, decks, { keep, groups, getPrice, listings, sellFoil })) {
+    const qty = copy.qty - copy.listed;
+    if (qty <= 0) continue;
+    // Two binders of the same chapter hold the same printing: one item for both
+    const id = `${copy.card.id}${copy.foil ? '-foil' : ''}`;
+    const existing = items.get(id);
+    if (existing) existing.qty += qty;
+    else items.set(id, { id, key: copy.key, card: copy.card, foil: copy.foil, qty, price: copy.price });
   }
   return [...items.values()].sort((a, b) => (b.price ?? -1) - (a.price ?? -1));
 };

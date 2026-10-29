@@ -5,6 +5,7 @@ import { getGame } from '../data/games';
 import { withCounts, changeCopies } from '../utils/cards';
 import { MAX_VERSIONS } from '../utils/deckRules';
 import { findTagByName, nextTagColor } from '../utils/deckTags';
+import { applyCardmarketEvents, unlist } from '../utils/cardmarketSync';
 
 const MAX_HISTORY = 300;
 
@@ -19,6 +20,15 @@ const DEFAULT_STATE = {
   pulls: [],
   // Copies of a card several decks share, assigned to one of them: { [cardKey]: { [deckId]: qty } }
   allocations: {},
+  // Decks built one at a time (variants of one deck), counted once in the want list: { id, deckIds }
+  deckGroups: [],
+  // Surplus copies put on sale, until sold and taken out: { [pocketCopyId]: { qty, at, cardmarket?, sold? } }
+  // (see getPocketCopyId and utils/cardmarketSync.js)
+  listings: {},
+  // Last Cardmarket journal event applied (see utils/cardmarketSync.js): { seq, at }
+  cardmarketSync: { seq: 0, at: null },
+  // Pockets holding a foil and a normal copy where the foil is sold and the normal kept: { [pocketId]: true }
+  sellFoil: {},
   // Collections other players shared to trade with them (see utils/tradeShare.js), plus importedAt
   // and the trade validated with them, if any: { rule, validatedAt, receive, give, found }
   partners: [],
@@ -36,6 +46,14 @@ const DEFAULT_STATE = {
     traderName: '',
     // Language of card names, texts and pictures: 'fr' or 'en'
     cardLanguage: 'fr',
+    // Want list: the Epic / Enchanted / Iconic pockets of the binders too
+    wantSpecials: false,
+    // Deck group suggestions turned down, by signature (see getDeckSetSignature)
+    dismissedDeckGroups: [],
+    // Resale: surplus copies worth less than this go to the bulk lots, not sold one by one
+    resaleThreshold: 0.5,
+    // Resale: what a shop pays for 1,000 bulk cards, to estimate a lot
+    bulkRatePerThousand: 15,
   },
 };
 
@@ -395,6 +413,26 @@ export const useBinders = () => {
     });
   }, []);
 
+  /** Counts decks as one built at a time: they leave their other groups for this one. Returns its id. */
+  const groupDecks = useCallback((deckIds) => {
+    const id = crypto.randomUUID();
+    setState((prev) => ({
+      ...prev,
+      deckGroups: [
+        ...prev.deckGroups
+          .map((g) => ({ ...g, deckIds: g.deckIds.filter((d) => !deckIds.includes(d)) }))
+          .filter((g) => g.deckIds.length > 1),
+        { id, deckIds },
+      ],
+    }));
+    return id;
+  }, []);
+
+  /** Splits a deck group: its decks are counted separately again. */
+  const ungroupDecks = useCallback((groupId) => {
+    setState((prev) => ({ ...prev, deckGroups: prev.deckGroups.filter((g) => g.id !== groupId) }));
+  }, []);
+
   const duplicateDeck = useCallback((deckId) => {
     const source = stateRef.current.decks.find((d) => d.id === deckId);
     if (!source) return null;
@@ -586,6 +624,88 @@ export const useBinders = () => {
     }));
   }, []);
 
+  /** Puts surplus copies on sale. items: [{ id, qty }] with pocket copy ids, qty added to what is listed. */
+  const listForSale = useCallback((items) => {
+    setState((prev) => {
+      const listings = { ...prev.listings };
+      for (const { id, qty } of items) if (qty > 0) listings[id] = { ...listings[id], qty: (listings[id]?.qty ?? 0) + qty, at: Date.now() };
+      return { ...prev, listings };
+    });
+  }, []);
+
+  /** Chooses which copy stays in a pocket holding both: the normal one (foil sold) or the foil. */
+  const setSellFoil = useCallback((pocketId, sell) => {
+    setState((prev) => {
+      const sellFoil = { ...prev.sellFoil };
+      if (sell) sellFoil[pocketId] = true;
+      else delete sellFoil[pocketId];
+      return { ...prev, sellFoil };
+    });
+  }, []);
+
+  /** Takes copies off sale: all the copies of the given pocket copy ids (kept until removed from Cardmarket). */
+  const unlistForSale = useCallback((ids) => {
+    setState((prev) => ({ ...prev, listings: unlist(prev.listings, ids) }));
+  }, []);
+
+  /** Applies the Cardmarket journal events not applied yet. Returns how many were. */
+  const applyCardmarketJournal = useCallback((events) => {
+    const fresh = events.filter((e) => e.seq > (stateRef.current.cardmarketSync?.seq ?? 0));
+    if (fresh.length === 0) return 0;
+    setState((prev) => {
+      const pending = fresh.filter((e) => e.seq > (prev.cardmarketSync?.seq ?? 0));
+      if (pending.length === 0) return prev;
+      return {
+        ...prev,
+        listings: applyCardmarketEvents(prev.listings, pending),
+        cardmarketSync: { seq: Math.max(...pending.map((e) => e.seq)), at: Math.max(...pending.map((e) => e.at)) },
+      };
+    });
+    return fresh.length;
+  }, []);
+
+  /**
+   * Takes sold or lotted copies out of the binders, and off sale. Returns what undoes it.
+   * @param {{ id, binderId, cardNumber, foil, qty }[]} moves id: pocket copy id
+   */
+  const removeCopies = useCallback((moves) => {
+    const prev = stateRef.current;
+    const touched = new Set(moves.map((m) => m.binderId));
+    const snapshot = {
+      binders: prev.binders.filter((b) => touched.has(b.id)).map((b) => ({ id: b.id, cards: b.cards })),
+      listings: prev.listings,
+    };
+    setState((state) => {
+      const listings = { ...state.listings };
+      for (const m of moves) {
+        const listing = listings[m.id];
+        if (!listing) continue;
+        // Sold copies leave first; what Cardmarket still shows stays to remove there
+        const qty = Math.max(0, listing.qty - m.qty);
+        const sold = Math.max(0, (listing.sold ?? 0) - m.qty);
+        if (qty > 0 || sold > 0 || (listing.cardmarket?.qty ?? 0) > 0) listings[m.id] = { ...listing, qty, sold };
+        else delete listings[m.id];
+      }
+      const binders = state.binders.map((b) => {
+        if (!touched.has(b.id)) return b;
+        let cards = b.cards;
+        for (const m of moves) if (m.binderId === b.id) cards = changeCopies(cards, String(m.cardNumber), -m.qty, m.foil);
+        return { ...b, cards };
+      });
+      return { ...state, binders, listings };
+    });
+    return snapshot;
+  }, []);
+
+  const restoreCopies = useCallback(({ binders: saved, listings }) => {
+    const cardsOf = new Map(saved.map((b) => [b.id, b.cards]));
+    setState((prev) => ({
+      ...prev,
+      binders: prev.binders.map((b) => (cardsOf.has(b.id) ? { ...b, cards: cardsOf.get(b.id) } : b)),
+      listings,
+    }));
+  }, []);
+
   /** Replaces the whole state with an imported backup. Throws if the file is not a backup. */
   const importState = useCallback((data) => {
     if (!data || !Array.isArray(data.binders)) throw new Error('Fichier de sauvegarde invalide');
@@ -601,6 +721,10 @@ export const useBinders = () => {
     deckTags: state.deckTags,
     pulls: state.pulls,
     allocations: state.allocations,
+    deckGroups: state.deckGroups,
+    listings: state.listings,
+    sellFoil: state.sellFoil,
+    cardmarketSync: state.cardmarketSync,
     partners: state.partners,
     setPartnerTrade,
     completePartnerTrade,
@@ -634,6 +758,14 @@ export const useBinders = () => {
     pullCards,
     returnCards,
     setAllocation,
+    groupDecks,
+    ungroupDecks,
+    listForSale,
+    unlistForSale,
+    setSellFoil,
+    applyCardmarketJournal,
+    removeCopies,
+    restoreCopies,
     createDeckTag,
     updateDeckTag,
     deleteDeckTag,
