@@ -1,4 +1,4 @@
-import { getMainPrinting, baseNumber } from './catalog.js';
+import { getMainPrinting, baseNumber, SPECIAL_RARITIES } from './catalog.js';
 import { getDeckUsage, getOwned } from './collection.js';
 import { getBinderMissing } from './trades.js';
 
@@ -7,6 +7,12 @@ import { getBinderMissing } from './trades.js';
  * A group needs, for each card, the most copies one of its decks plays, not the sum. Locked decks
  * keep their own copies, so they never join a group.
  */
+
+/**
+ * Special rarities whose pockets the want list asks for (Epic, Enchanted, Iconic, each on its own).
+ * Saves of the first version kept one switch for all three.
+ */
+export const getWantSpecials = (prefs) => prefs.wantSpecialRarities ?? (prefs.wantSpecials ? SPECIAL_RARITIES : []);
 
 /** Share of a deck's cards another deck plays too, on the smaller of the two. */
 const OVERLAP_THRESHOLD = 0.6;
@@ -99,22 +105,47 @@ export const suggestDeckGroups = (decks, groups = [], dismissed = []) => {
  * user assigned copies to (allocations), then the deck list order.
  * A copy filling a pocket also counts for the decks, which take their cards from the binders: a
  * card wanted for both is bought max(pockets, deck copies) times, not the sum.
+ * Copies bought and not received yet (incoming) count as owned: they fill their printing's pocket
+ * and serve the decks.
  *
  * @param {{ binders: object[], decks: object[], index: object, collection: object,
- *   groups?: object[], allocations?: object, specials?: boolean }} options
- *   specials: Epic / Enchanted / Iconic pockets too
+ *   groups?: object[], allocations?: object, specials?: boolean|string[], incoming?: object }} options
+ *   specials: the special rarities whose pockets are wanted too (true: all of them);
+ *   incoming: purchases waiting for delivery, { [id]: { cardId, qty } }
  * @returns {{
- *   binders: { binder, wanted: { card, key, cardNumber, alsoDeck: boolean }[], owned: number, total: number }[],
+ *   binders: { binder, wanted: { card, key, cardNumber, alsoDeck: boolean }[], awaiting: number, owned: number, total: number }[],
  *   units: { id, decks, locked, grouped, cards: { key, card, need, owned, missing, decks: { deck, qty, missing }[], alsoBinder: boolean, sharedWith: object[] }[], missing: number, need: number }[],
  *   cards: { key, card, pockets: object[], deckMissing: number, copies: number, both: number }[],
  *   totals: { copies: number, binderOnly: number, deckOnly: number, both: number }
  * }}
  */
-export const getWantList = ({ binders, decks, index, collection, groups = [], allocations = {}, specials = false }) => {
+export const getWantList = ({
+  binders,
+  decks,
+  index,
+  collection,
+  groups = [],
+  allocations = {},
+  specials = false,
+  incoming = {},
+}) => {
+  const pocketOf = (card) => `${card.set}-${baseNumber(card.number)}`;
   // Pockets held somewhere: two binders of the same chapter wait for the same card once
   const ownedPockets = new Set();
   for (const entry of collection.entries.values()) {
-    for (const copy of entry.copies) ownedPockets.add(`${copy.card.set}-${baseNumber(copy.card.number)}`);
+    for (const copy of entry.copies) ownedPockets.add(pocketOf(copy.card));
+  }
+  const specialRarities = specials === true ? SPECIAL_RARITIES : Array.isArray(specials) ? specials : [];
+  const wantsCard = (card) => !SPECIAL_RARITIES.includes(card.rarity) || specialRarities.includes(card.rarity);
+  const missingOf = (binder) => getBinderMissing(binder, index, specialRarities.length > 0).filter(wantsCard);
+
+  const incomingPockets = new Map();
+  const incomingByKey = new Map();
+  for (const { cardId, qty } of Object.values(incoming)) {
+    const card = index?.byId.get(cardId);
+    if (!card) continue;
+    incomingPockets.set(pocketOf(card), (incomingPockets.get(pocketOf(card)) ?? 0) + qty);
+    incomingByKey.set(card.key, (incomingByKey.get(card.key) ?? 0) + qty);
   }
 
   const binderLists = [];
@@ -122,17 +153,23 @@ export const getWantList = ({ binders, decks, index, collection, groups = [], al
   for (const binder of binders) {
     if (binder.gameType !== 'lorcana' || !binder.setCode) continue;
     const wanted = [];
-    const missing = getBinderMissing(binder, index, specials);
+    let awaiting = 0;
+    const missing = missingOf(binder);
     for (const card of missing) {
-      const pocket = `${card.set}-${baseNumber(card.number)}`;
+      const pocket = pocketOf(card);
       if (ownedPockets.has(pocket)) continue;
       ownedPockets.add(pocket);
+      if (incomingPockets.get(pocket) > 0) {
+        incomingPockets.set(pocket, incomingPockets.get(pocket) - 1);
+        awaiting++;
+        continue;
+      }
       const want = { card, key: card.key, cardNumber: String(baseNumber(card.number)), binder, alsoDeck: false };
       wanted.push(want);
       pocketsByKey.set(card.key, [...(pocketsByKey.get(card.key) ?? []), want]);
     }
-    const total = getBinderMissing({ ...binder, cards: {} }, index, specials).length;
-    binderLists.push({ binder, wanted, owned: total - missing.length, total });
+    const total = missingOf({ ...binder, cards: {} }).length;
+    binderLists.push({ binder, wanted, awaiting, owned: total - missing.length, total });
   }
 
   // Deck needs per card and unit
@@ -149,7 +186,7 @@ export const getWantList = ({ binders, decks, index, collection, groups = [], al
     const priority = (unit) =>
       unit.locked ? Infinity : unit.decks.reduce((s, d) => s + (allocations[key]?.[d.id] ?? 0), 0);
     const ordered = [...byUnit.keys()].sort((a, b) => priority(b) - priority(a) || units.indexOf(a) - units.indexOf(b));
-    let free = getOwned(collection, key);
+    let free = getOwned(collection, key) + (incomingByKey.get(key) ?? 0);
     let keyMissing = 0;
     const lines = [];
     for (const unit of ordered) {

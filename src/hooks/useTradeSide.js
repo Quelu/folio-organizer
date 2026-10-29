@@ -17,7 +17,7 @@ export const DEFAULT_TRADE_WANTS = { specials: false, decks: true };
  * @returns {{ owned: object[], haves: object[], wants: object[] } | null} null until the catalog is loaded
  */
 export const useTradeSide = (binderIds = null) => {
-  const { binders, decks, deckGroups, allocations, listings, sellFoil, prefs } = useStore();
+  const { binders, decks, deckGroups, allocations, listings, sellFoil, purchases, prefs } = useStore();
   const { index } = useCatalog();
   const collection = useCollection();
   const scoped = useCollection(binderIds);
@@ -40,8 +40,9 @@ export const useTradeSide = (binderIds = null) => {
         collection,
         groups: deckGroups,
         allocations,
+        incoming: purchases,
         specials,
       }),
     };
-  }, [index, scopeKey, scoped, collection, binders, decks, keep, getPrice, deckGroups, allocations, listings, sellFoil, specials, withDecks]);
+  }, [index, scopeKey, scoped, collection, binders, decks, keep, getPrice, deckGroups, allocations, listings, sellFoil, purchases, specials, withDecks]);
 };

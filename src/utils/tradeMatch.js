@@ -109,7 +109,7 @@ const pocketOf = (card) => `${card.set}-${baseNumber(card.number)}`;
  * Cards the user looks for: the want list of the given binders and decks (see getWantList), the
  * empty pockets one by one and the copies the decks miss, one want per card.
  * @param {{ binders: object[], decks: object[], index: object, collection: object,
- *   groups?: object[], allocations?: object, specials?: boolean }} options decks: the ones to take into account
+ *   groups?: object[], allocations?: object, specials?: boolean, incoming?: object }} options decks: the ones to take into account
  * @returns {object[]} wants
  */
 export const getWants = (options) => {

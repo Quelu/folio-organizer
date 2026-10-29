@@ -34,13 +34,15 @@ import { buildCollection, getPullList, getCopyAllocation, getDeckUsage, getPulle
 import { analyzeDeck, parseDeckList, formatDeckList } from '../src/utils/deckRules.js';
 import { formatDeckProfile } from '../src/utils/deckProfile.js';
 import { getDeckTags } from '../src/utils/deckTags.js';
-import { getWantList } from '../src/utils/wantList.js';
+import { getWantList, getWantSpecials } from '../src/utils/wantList.js';
 import { getSurplusCopies, getListedCopies } from '../src/utils/trades.js';
 import { getSaleLines } from '../src/utils/cardmarketExport.js';
 import {
   CARDMARKET_SYNC_FILE,
   CARDMARKET_ACTIONS,
+  PURCHASE_ACTIONS,
   applyCardmarketEvents,
+  applyPurchaseEvents,
   getCardmarketPlan,
 } from '../src/utils/cardmarketSync.js';
 import { getBinderStats, getLocation } from '../src/utils/calculations.js';
@@ -111,6 +113,7 @@ const loadBackup = async () => {
       listings: data.listings ?? {},
       sellFoil: data.sellFoil ?? {},
       cardmarketSync: data.cardmarketSync ?? { seq: 0, at: null },
+      purchases: data.purchases ?? {},
       prefs: data.prefs ?? {},
       exportedAt: data.exportedAt ?? null,
     },
@@ -233,9 +236,11 @@ const getContext = async () => {
   // Journal events the app has not applied yet: the server sees the listings as they will be
   const pending = journal.filter((e) => e.seq > (backup.data.cardmarketSync?.seq ?? 0));
   const listings = applyCardmarketEvents(backup.data.listings, pending);
+  const purchases = applyPurchaseEvents(backup.data.purchases, pending);
   return {
     ...backup.data,
     listings,
+    purchases,
     journal,
     pending,
     file: backup.file,
@@ -611,12 +616,15 @@ tool(
     description:
       'Tout ce qu’il manque, compté une fois : les pochettes vides des fardes (version exacte du chapitre) et les copies qui manquent aux decks (toutes versions). Une copie rangée en farde compte aussi pour les decks ; les decks d’un groupe de variantes sont montés un à la fois.',
     inputSchema: {
-      specials: z.boolean().optional().describe('Inclure les pochettes Épiques, Enchantées et Iconiques (réglage de l’app par défaut)'),
+      specials: z
+        .array(z.enum(SPECIAL_RARITIES))
+        .optional()
+        .describe('Raretés spéciales dont les pochettes sont voulues aussi : Epic, Enchanted, Iconic (réglage de l’app par défaut)'),
     },
     annotations: { readOnlyHint: true },
   },
   async ({ specials }) => {
-    const { index, binders, decks, collection, deckGroups = [], allocations = {}, prefs = {} } = await getContext();
+    const { index, binders, decks, collection, deckGroups = [], allocations = {}, prefs = {}, purchases } = await getContext();
     const list = getWantList({
       binders,
       decks,
@@ -624,11 +632,21 @@ tool(
       collection,
       groups: deckGroups,
       allocations,
-      specials: specials ?? prefs.wantSpecials ?? false,
+      specials: specials ?? getWantSpecials(prefs),
+      incoming: purchases,
     });
     const { totals } = list;
+    const waiting = Object.entries(purchases);
     const lines = [
       `${plural(totals.copies, 'copie')} à trouver : ${totals.binderOnly} pour les fardes seules, ${totals.deckOnly} pour les decks seuls, ${totals.both} qui servent aux deux.`,
+      '',
+      `Achetées, en attente de réception (${waiting.length}) :`,
+      ...(waiting.length
+        ? waiting.map(([id, p]) => {
+            const card = index.byId.get(p.cardId);
+            return `  [${id}] ${p.qty}× ${card ? cite(card) : p.cardId} — ${p.status === 'arrived' ? 'arrivée, à ranger' : 'commandée'}${p.orderId ? ` — commande Cardmarket ${p.orderId}` : ''}`;
+          })
+        : ['  rien']),
       '',
       'Fardes :',
     ];
@@ -767,6 +785,49 @@ tool(
       `${plural(added.length, 'action notée', 'actions notées')} pour Folio.`,
       `Reste : ${plural(plan.toList.reduce((s, x) => s + x.qty, 0), 'copie')} à mettre en vente, ${plural(plan.toRemove.reduce((s, x) => s + x.qty, 0), 'copie')} à retirer.`,
     ].join('\n');
+  }
+);
+
+tool(
+  'purchase_record',
+  {
+    title: 'Noter un achat',
+    description:
+      'Enregistre dans Folio des cartes achetées (sur Cardmarket ou ailleurs) en attente de réception, pour que la want list ne les demande plus : ordered (achetée : card_id, qty, order_id), arrived (commande reçue : order_id), cancelled (commande annulée : order_id). Après coup uniquement, d’après ce que montre la page des achats. Folio applique ces actions à la prochaine lecture (sauvegarde auto activée).',
+    inputSchema: {
+      events: z
+        .array(
+          z.object({
+            action: z.enum(PURCHASE_ACTIONS),
+            card_id: z.string().optional().describe('Carte achetée, « chapitre-numéro » comme dans les citations (ordered)'),
+            qty: z.number().int().min(1).optional().describe('Copies achetées (ordered)'),
+            order_id: z.string().optional().describe('Numéro de la commande Cardmarket'),
+          })
+        )
+        .min(1),
+    },
+  },
+  async ({ events }) => {
+    const { index, purchases, journal, cardmarketSync } = await getContext();
+    const applied = cardmarketSync?.seq ?? 0;
+    let seq = Math.max(applied, ...journal.map((e) => e.seq));
+    const at = Date.now();
+    const added = [];
+    for (const e of events) {
+      if (e.action === 'ordered') {
+        const card = index.byId.get(String(e.card_id ?? ''));
+        if (!card || !e.qty) throw new Error(`ordered : card_id inconnu ou qty manquante (${e.card_id ?? '?'}).`);
+        added.push({ seq: ++seq, at, action: 'ordered', purchaseId: `cm-${e.order_id ?? 'sans-commande'}-${card.id}`, cardId: card.id, key: card.key, qty: e.qty, orderId: e.order_id ?? null });
+        continue;
+      }
+      const ids = Object.entries(purchases)
+        .filter(([, p]) => e.order_id && p.orderId === e.order_id && (!e.card_id || p.cardId === e.card_id))
+        .map(([id]) => id);
+      if (!ids.length) throw new Error(`${e.action} : aucun achat de la commande ${e.order_id ?? '?'} dans Folio.`);
+      for (const id of ids) added.push({ seq: ++seq, at, action: e.action, purchaseId: id });
+    }
+    await writeJournal([...journal.filter((e) => e.seq > applied), ...added]);
+    return `${plural(added.length, 'action notée', 'actions notées')} pour Folio.`;
   }
 );
 
