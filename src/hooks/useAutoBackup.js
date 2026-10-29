@@ -19,8 +19,9 @@ const fileName = () => `folio-sauvegarde-auto-${new Date().toISOString().slice(0
  * to write, which needs a click (resume).
  * @returns {{ supported: boolean, status: 'off'|'on'|'paused'|'error', folderName: string|null,
  *   savedAt: number|null, choose: () => Promise<boolean>, resume: () => Promise<void>, stop: () => Promise<void>,
- *   readFile: (name: string) => Promise<string|null> }} readFile: another file of the folder (the MCP
- *   server's Cardmarket journal), null when missing or not readable
+ *   readFile: (name: string) => Promise<string|null>, writeFile: (name: string, text: string) => Promise<boolean>,
+ *   listFiles: () => Promise<string[]> }} readFile: another file of the folder (the MCP server's
+ *   Cardmarket journal, the price history), null when missing or not readable
  */
 export const useAutoBackup = (state) => {
   const [folder, setFolder] = useState(null);
@@ -96,6 +97,36 @@ export const useAutoBackup = (state) => {
     [folder, status]
   );
 
+  /** Writes another file of the folder (the monthly price history); false when it could not. */
+  const writeFile = useCallback(
+    async (name, text) => {
+      if (!folder || status !== 'on') return false;
+      try {
+        const file = await folder.getFileHandle(name, { create: true });
+        const writable = await file.createWritable();
+        await writable.write(text);
+        await writable.close();
+        return true;
+      } catch (error) {
+        if (error?.name === 'NotAllowedError') setStatus('paused');
+        return false;
+      }
+    },
+    [folder, status]
+  );
+
+  /** Names of the files in the folder. */
+  const listFiles = useCallback(async () => {
+    if (!folder || status !== 'on') return [];
+    const names = [];
+    try {
+      for await (const name of folder.keys()) names.push(name);
+    } catch {
+      // Folder deleted or moved: the next state write reports it
+    }
+    return names;
+  }, [folder, status]);
+
   /** Asks for a folder and starts writing to it; false when the user cancels. */
   const choose = useCallback(async () => {
     try {
@@ -121,5 +152,5 @@ export const useAutoBackup = (state) => {
     setSavedAt(null);
   }, []);
 
-  return { supported, status, folderName: folder?.name ?? null, savedAt, choose, resume, stop, readFile };
+  return { supported, status, folderName: folder?.name ?? null, savedAt, choose, resume, stop, readFile, writeFile, listFiles };
 };
