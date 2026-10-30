@@ -119,6 +119,8 @@ const bySetNumber = (a, b) =>
 // Dual-ink cards after the single inks
 const inkRank = (card) => (card.inks.length > 1 ? INKS.length : (INK_RANK.get(card.inks[0]) ?? INKS.length + 1));
 
+const changeRank = (item) => (item.change == null || (item.price ?? 0) < 1 ? 0 : item.change);
+
 /** Sorts of the explorer. desc: natural direction, the rarest or most valuable first. */
 export const SORTS = [
   { key: 'number', label: 'Numéro', compare: bySetNumber },
@@ -132,6 +134,14 @@ export const SORTS = [
     compare: (a, b) => (RARITY_RANK.get(a.card.rarity) ?? -1) - (RARITY_RANK.get(b.card.rarity) ?? -1),
   },
   { key: 'price', label: 'Prix', desc: true, compare: (a, b) => (a.price ?? -1) - (b.price ?? -1) },
+  // Rises first, falls first once reversed: cards without a change (unpriced, history too short)
+  // and cards under a euro, whose cents look like huge swings, rank as flat in the middle
+  {
+    key: 'change',
+    label: 'Variation 30 j',
+    desc: true,
+    compare: (a, b) => changeRank(a) - changeRank(b),
+  },
   { key: 'quantity', label: 'Exemplaires', desc: true, compare: (a, b) => a.total - b.total },
 ];
 

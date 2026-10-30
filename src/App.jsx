@@ -4,6 +4,8 @@ import { Library, Menu as MenuIcon, Hash, MousePointerClick, Download, Loader2 }
 import { useBinders } from './hooks/useBinders';
 import { useAutoBackup } from './hooks/useAutoBackup';
 import { useCardmarketSync } from './hooks/useCardmarketSync';
+import { usePriceHistorySync } from './hooks/usePriceHistorySync';
+import { PriceHistoryContext } from './hooks/priceHistoryContext';
 import { StoreContext } from './hooks/storeContext';
 import CatalogProvider from './hooks/CatalogProvider';
 import Sidebar from './components/Sidebar/Sidebar';
@@ -21,6 +23,7 @@ import ToastProvider from './components/ui/ToastProvider';
 import { useToast } from './components/ui/toastContext';
 import { parseCollectionShare } from './utils/tradeShare';
 import { serializeBackup } from './utils/storage';
+import { addMonths, parseHistory } from './utils/priceHistory';
 
 // The assistant brings the Anthropic SDK and the Markdown renderer: loaded when first opened
 const AssistantView = lazy(() => import('./components/Assistant/AssistantView'));
@@ -137,6 +140,7 @@ const AppContent = () => {
   } = store;
   const autoBackup = useAutoBackup(state);
   useCardmarketSync(autoBackup, store.applyCardmarketJournal, notify);
+  const priceBackup = usePriceHistorySync(autoBackup);
 
   // Cmd/Ctrl+K opens the card search from anywhere
   useEffect(() => {
@@ -225,6 +229,13 @@ const AppContent = () => {
         notify({ tone: 'success', message: `Collection de ${share.owner} importée dans Échanges` });
         return;
       }
+      // A price history file: its days join the history, nothing recorded is replaced
+      const months = parseHistory(data);
+      if (months) {
+        const added = await addMonths(months);
+        notify({ tone: 'success', message: added ? `Historique des prix : ${added} jour(s) ajouté(s)` : 'Historique des prix déjà à jour' });
+        return;
+      }
       if (!Array.isArray(data?.binders)) throw new Error();
       setPendingImport(data);
     } catch {
@@ -258,103 +269,105 @@ const AppContent = () => {
 
   return (
     <StoreContext.Provider value={store}>
-      <CatalogProvider lang={prefs.cardLanguage}>
-        <CardPreviewProvider onLocate={locateCard}>
-          <div className="flex h-[100dvh] text-slate-100 overflow-hidden bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.08),transparent_60%)]">
-            <Sidebar {...sidebarProps} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <PriceHistoryContext.Provider value={priceBackup}>
+        <CatalogProvider lang={prefs.cardLanguage}>
+          <CardPreviewProvider onLocate={locateCard}>
+            <div className="flex h-[100dvh] text-slate-100 overflow-hidden bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.08),transparent_60%)]">
+              <Sidebar {...sidebarProps} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-            <main className="flex-1 flex flex-col overflow-hidden min-w-0">
-              {view.kind === 'decks' ? (
-                <DecksView onOpenSidebar={() => setSidebarOpen(true)} onLocate={locateCard} />
-              ) : view.kind === 'stats' ? (
-                <CollectionView onOpenSidebar={() => setSidebarOpen(true)} />
-              ) : view.kind === 'trades' ? (
-                <TradesView onOpenSidebar={() => setSidebarOpen(true)} onShareCollection={() => openShare()} onLocate={locateCard} />
-              ) : view.kind === 'rotation' ? (
-                <RotationView onOpenSidebar={() => setSidebarOpen(true)} />
-              ) : view.kind === 'assistant' ? (
-                <Suspense
-                  fallback={
-                    <div className="flex-1 flex items-center justify-center text-slate-500">
-                      <Loader2 size={20} className="animate-spin" />
-                    </div>
-                  }
-                >
-                  <AssistantView onOpenSidebar={() => setSidebarOpen(true)} />
-                </Suspense>
-              ) : activeBinder ? (
-                <BinderView
-                  key={activeBinder.id}
-                  binder={activeBinder}
-                  focusRequest={focusRequest?.binderId === activeBinder.id ? focusRequest : null}
-                  pulls={pulls}
-                  decks={decks}
-                  addHistory={addHistory}
-                  prefs={prefs}
-                  onSetPref={setPref}
-                  onAddCards={addCards}
-                  onRemoveCard={removeCard}
-                  onSetCounts={setCardCounts}
-                  onRemoveLastAdded={removeLastAdded}
-                  onHydrateImages={hydrateImages}
-                  onBulkMarkExported={bulkMarkExported}
-                  onResetExports={resetExports}
-                  onEdit={() => openEdit(activeBinder)}
-                  onDuplicate={() => handleDuplicate(activeBinder.id)}
-                  onDelete={() => requestDelete(activeBinder.id)}
-                  onOpenSidebar={() => setSidebarOpen(true)}
-                />
-              ) : (
-                <Welcome onCreate={openCreate} onOpenSidebar={() => setSidebarOpen(true)} />
-              )}
-            </main>
+              <main className="flex-1 flex flex-col overflow-hidden min-w-0">
+                {view.kind === 'decks' ? (
+                  <DecksView onOpenSidebar={() => setSidebarOpen(true)} onLocate={locateCard} />
+                ) : view.kind === 'stats' ? (
+                  <CollectionView onOpenSidebar={() => setSidebarOpen(true)} />
+                ) : view.kind === 'trades' ? (
+                  <TradesView onOpenSidebar={() => setSidebarOpen(true)} onShareCollection={() => openShare()} onLocate={locateCard} />
+                ) : view.kind === 'rotation' ? (
+                  <RotationView onOpenSidebar={() => setSidebarOpen(true)} />
+                ) : view.kind === 'assistant' ? (
+                  <Suspense
+                    fallback={
+                      <div className="flex-1 flex items-center justify-center text-slate-500">
+                        <Loader2 size={20} className="animate-spin" />
+                      </div>
+                    }
+                  >
+                    <AssistantView onOpenSidebar={() => setSidebarOpen(true)} />
+                  </Suspense>
+                ) : activeBinder ? (
+                  <BinderView
+                    key={activeBinder.id}
+                    binder={activeBinder}
+                    focusRequest={focusRequest?.binderId === activeBinder.id ? focusRequest : null}
+                    pulls={pulls}
+                    decks={decks}
+                    addHistory={addHistory}
+                    prefs={prefs}
+                    onSetPref={setPref}
+                    onAddCards={addCards}
+                    onRemoveCard={removeCard}
+                    onSetCounts={setCardCounts}
+                    onRemoveLastAdded={removeLastAdded}
+                    onHydrateImages={hydrateImages}
+                    onBulkMarkExported={bulkMarkExported}
+                    onResetExports={resetExports}
+                    onEdit={() => openEdit(activeBinder)}
+                    onDuplicate={() => handleDuplicate(activeBinder.id)}
+                    onDelete={() => requestDelete(activeBinder.id)}
+                    onOpenSidebar={() => setSidebarOpen(true)}
+                  />
+                ) : (
+                  <Welcome onCreate={openCreate} onOpenSidebar={() => setSidebarOpen(true)} />
+                )}
+              </main>
 
-            <CardSearchModal isOpen={searchOpen} onClose={() => setSearchOpen(false)} onLocate={locateCard} />
+              <CardSearchModal isOpen={searchOpen} onClose={() => setSearchOpen(false)} onLocate={locateCard} />
 
-            <ShareCollectionModal
-              isOpen={shareState.open}
-              initialBinderIds={shareState.binderIds}
-              onClose={() => setShareState((s) => ({ ...s, open: false }))}
-            />
+              <ShareCollectionModal
+                isOpen={shareState.open}
+                initialBinderIds={shareState.binderIds}
+                onClose={() => setShareState((s) => ({ ...s, open: false }))}
+              />
 
-            <BinderFormModal
-              isOpen={formState.open}
-              binder={formState.binder}
-              onClose={closeForm}
-              onSubmit={handleFormSubmit}
-            />
+              <BinderFormModal
+                isOpen={formState.open}
+                binder={formState.binder}
+                onClose={closeForm}
+                onSubmit={handleFormSubmit}
+              />
 
-            <ConfirmDialog
-              isOpen={Boolean(pendingDelete)}
-              onClose={() => setPendingDelete(null)}
-              onConfirm={confirmDelete}
-              title="Supprimer la farde ?"
-              message={
-                pendingDelete &&
-                `« ${pendingDelete.name} » et ses ${Object.keys(pendingDelete.cards).length} cartes seront supprimées. Tu pourras annuler pendant quelques secondes.`
-              }
-              confirmLabel="Supprimer"
-              danger
-            />
+              <ConfirmDialog
+                isOpen={Boolean(pendingDelete)}
+                onClose={() => setPendingDelete(null)}
+                onConfirm={confirmDelete}
+                title="Supprimer la farde ?"
+                message={
+                  pendingDelete &&
+                  `« ${pendingDelete.name} » et ses ${Object.keys(pendingDelete.cards).length} cartes seront supprimées. Tu pourras annuler pendant quelques secondes.`
+                }
+                confirmLabel="Supprimer"
+                danger
+              />
 
-            <ConfirmDialog
-              isOpen={Boolean(pendingImport)}
-              onClose={() => setPendingImport(null)}
-              onConfirm={() => {
-                importState(pendingImport);
-                notify({ tone: 'success', message: `${pendingImport.binders.length} farde(s) restaurée(s)` });
-              }}
-              title="Restaurer la sauvegarde ?"
-              message={
-                pendingImport &&
-                `Tes ${binders.length} farde(s) et ${decks.length} deck(s) actuels seront remplacés par les ${pendingImport.binders.length} farde(s) et ${pendingImport.decks?.length ?? 0} deck(s) du fichier.`
-              }
-              confirmLabel="Restaurer"
-              danger
-            />
-          </div>
-        </CardPreviewProvider>
-      </CatalogProvider>
+              <ConfirmDialog
+                isOpen={Boolean(pendingImport)}
+                onClose={() => setPendingImport(null)}
+                onConfirm={() => {
+                  importState(pendingImport);
+                  notify({ tone: 'success', message: `${pendingImport.binders.length} farde(s) restaurée(s)` });
+                }}
+                title="Restaurer la sauvegarde ?"
+                message={
+                  pendingImport &&
+                  `Tes ${binders.length} farde(s) et ${decks.length} deck(s) actuels seront remplacés par les ${pendingImport.binders.length} farde(s) et ${pendingImport.decks?.length ?? 0} deck(s) du fichier.`
+                }
+                confirmLabel="Restaurer"
+                danger
+              />
+            </div>
+          </CardPreviewProvider>
+        </CatalogProvider>
+      </PriceHistoryContext.Provider>
     </StoreContext.Provider>
   );
 };

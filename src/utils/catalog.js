@@ -29,6 +29,14 @@ export const CARD_TYPES = [
 /** Rarities printed outside the regular set list (alternate arts). */
 export const SPECIAL_RARITIES = ['Epic', 'Enchanted', 'Iconic'];
 
+/**
+ * The price that applies to a copy, from a printing's normal and foil prices. Enchanted, Epic and
+ * Iconic cards only exist as foils: their regular price is the one to use. A missing foil price
+ * stays unknown rather than borrowing the normal one.
+ */
+export const pickPrice = (card, foil, price, foilPrice) =>
+  SPECIAL_RARITIES.includes(card.rarity) ? (price ?? foilPrice) : foil ? foilPrice : price;
+
 export const FORMATS = [
   { key: 'core', label: 'Core' },
   { key: 'infinity', label: 'Infinity' },
