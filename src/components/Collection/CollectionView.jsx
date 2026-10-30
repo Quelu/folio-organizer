@@ -1,11 +1,13 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu as MenuIcon, Loader2, RotateCcw, Search, SlidersHorizontal, X, LayoutGrid, Sparkles, Layers, Coins, Heart } from 'lucide-react';
+import { Menu as MenuIcon, Loader2, RotateCcw, Search, SlidersHorizontal, X, LayoutGrid, Sparkles, Layers, Coins, Heart, ChartLine } from 'lucide-react';
 import { useStore } from '../../hooks/storeContext';
 import { useCatalog } from '../../hooks/catalogContext';
 import { useCollection } from '../../hooks/useCollection';
 import { useCardLang } from '../../hooks/useCardLang';
 import { usePrices } from '../../hooks/usePrices';
+import { usePriceHistory } from '../../hooks/usePriceHistory';
+import { daysBetween, seriesChange } from '../../utils/priceHistory';
 import { getDeckUsage } from '../../utils/collection';
 import {
   EMPTY_FILTERS,
@@ -22,6 +24,8 @@ import CardsExplorer from './CardsExplorer';
 import { CompletionTab, PlaysetsTab } from './ToolTabs';
 import ResaleTab from './ResaleTab';
 import WantListTab from './WantListTab';
+import TrendTab from './TrendTab';
+import PriceChange from '../ui/PriceChange';
 
 const CARD_FILTERS = ['sets', 'inks', 'costs', 'rarities', 'types', 'inkwell', 'core'];
 const ALL_FILTERS = Object.keys(EMPTY_FILTERS);
@@ -35,7 +39,11 @@ const TABS = [
   { key: 'playsets', label: 'Playsets', icon: Layers, filters: CARD_FILTERS },
   { key: 'wants', label: 'Want list', icon: Heart, filters: [...CARD_FILTERS, 'decks', 'binders'] },
   { key: 'resale', label: 'Revente', icon: Coins, filters: [...CARD_FILTERS, 'foil', 'binders'] },
+  { key: 'trend', label: 'Cote', icon: ChartLine, filters: ALL_FILTERS },
 ];
+
+// The price change shown beside the value and sorted on in the explorer
+const TREND_DAYS = 30;
 
 const DEFAULT_EXPLORER = { mode: 'owned', sort: 'number', reverse: false, group: 'none', layout: 'grid', size: 'm' };
 
@@ -55,6 +63,7 @@ const CollectionView = ({ onOpenSidebar }) => {
   const collection = useCollection();
   const cardLang = useCardLang();
   const prices = usePrices();
+  const history = usePriceHistory();
   const [search, setSearch] = useState('');
   const query = useDeferredValue(search.trim());
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -107,6 +116,17 @@ const CollectionView = ({ onOpenSidebar }) => {
     return { cards: collection.entries.size, copies, foils, value };
   }, [owned, collection, prices]);
 
+  // Points of the last 30 days of the price history: two at least to tell a change
+  const trendPoints = useMemo(() => (history.status === 'ready' ? history.points(TREND_DAYS) : []), [history]);
+
+  /** The collection's value change over the last 30 days, or since the first recorded day. */
+  const valueTrend = useMemo(() => {
+    if (trendPoints.length < 2) return null;
+    const change = seriesChange(history.valueSeries([...owned.values()], trendPoints));
+    const span = daysBetween(history.days[trendPoints[0]].day, history.days[trendPoints[trendPoints.length - 1]].day);
+    return change?.ratio == null ? null : { ...change, span };
+  }, [history, trendPoints, owned]);
+
   const results = useMemo(() => {
     if (!index || tab.key !== 'cards') return { items: [], copies: 0, foils: 0, value: 0 };
     const source =
@@ -130,7 +150,11 @@ const CollectionView = ({ onOpenSidebar }) => {
           );
     const items = source
       .filter((item) => matchesCard(item.card, tabFilters, query, ctx) && matchesCopies(item, tabFilters))
-      .map((item) => ({ ...item, price: unitPrice(prices, item.card) }));
+      .map((item) => ({
+        ...item,
+        price: unitPrice(prices, item.card),
+        change: trendPoints.length > 1 ? (seriesChange(history.priceSeries(item.card, item.total > 0 && item.normal === 0, trendPoints))?.ratio ?? null) : null,
+      }));
     let copies = 0;
     let foils = 0;
     let value = 0;
@@ -140,7 +164,7 @@ const CollectionView = ({ onOpenSidebar }) => {
       value += explorer.mode === 'missing' ? (item.price ?? 0) : copiesValue(prices, item);
     }
     return { items: sortItems(items, explorer.sort, explorer.reverse, { name: cardLang.fullName }), copies, foils, value };
-  }, [index, tab.key, explorer.mode, explorer.sort, explorer.reverse, owned, scopeSets, collection, tabFilters, query, ctx, prices, cardLang]);
+  }, [index, tab.key, explorer.mode, explorer.sort, explorer.reverse, owned, scopeSets, collection, tabFilters, query, ctx, prices, cardLang, history, trendPoints]);
 
   // Back to the top when the results change, not left in the middle of another list
   const scrollRef = useRef(null);
@@ -186,6 +210,8 @@ const CollectionView = ({ onOpenSidebar }) => {
         return <PlaysetsTab ctx={ctx} />;
       case 'resale':
         return <ResaleTab ctx={ctx} prices={prices} />;
+      case 'trend':
+        return <TrendTab ctx={ctx} prices={prices} onSets={(sets) => setFilters({ ...filters, sets })} />;
       case 'wants':
         return <WantListTab ctx={ctx} prices={prices} onOpenDeck={(deckId) => setView({ kind: 'decks', deckId })} />;
       default:
@@ -226,16 +252,30 @@ const CollectionView = ({ onOpenSidebar }) => {
                   {
                     label: 'valeur',
                     value: prices.status === 'ready' ? prices.format(summary.value) : '…',
-                    title: `Prix ${prices.source}, foils au prix foil`,
+                    title: valueTrend
+                      ? `Prix ${prices.source}, foils au prix foil · ${prices.format(valueTrend.from)} il y a ${valueTrend.span} j : voir la cote`
+                      : `Prix ${prices.source}, foils au prix foil`,
+                    trend: valueTrend,
                   },
-                ].map((s) => (
-                  <div key={s.label} title={s.title} className={s.foil && !summary.foils ? 'hidden' : ''}>
-                    <div className={`text-base sm:text-lg font-bold tabular-nums leading-tight ${s.foil ? 'foil-text' : 'text-white'}`}>
-                      {s.value}
-                    </div>
-                    <div className="text-[10px] uppercase tracking-wider text-slate-500">{s.label}</div>
-                  </div>
-                ))}
+                ].map((s) => {
+                  const Stat = s.trend ? 'button' : 'div';
+                  return (
+                    <Stat
+                      key={s.label}
+                      title={s.title}
+                      {...(s.trend && { type: 'button', onClick: () => setTab('trend') })}
+                      className={`${s.foil && !summary.foils ? 'hidden' : ''} ${s.trend ? 'text-right rounded-md -mx-1.5 px-1.5 hover:bg-white/[0.04] transition-colors' : ''}`}
+                    >
+                      <div className={`text-base sm:text-lg font-bold tabular-nums leading-tight ${s.foil ? 'foil-text' : 'text-white'}`}>
+                        {s.value}
+                      </div>
+                      <div className="text-[10px] uppercase tracking-wider text-slate-500">
+                        {s.label}
+                        {s.trend && <PriceChange ratio={s.trend.ratio} suffix={`${s.trend.span} j`} className="ml-1.5 normal-case tracking-normal" />}
+                      </div>
+                    </Stat>
+                  );
+                })}
               </div>
             )}
           </div>

@@ -1,23 +1,29 @@
 /**
  * Minimal IndexedDB key-value storage for data too large for localStorage: the card catalog,
- * prices and AI conversations. Every call fails soft (null / no-op) so the app keeps working
- * when IndexedDB is unavailable (private mode, blocked storage).
+ * prices, the price history and AI conversations. Every call fails soft (null / no-op) so the app
+ * keeps working when IndexedDB is unavailable (private mode, blocked storage).
  */
 
 const DB_NAME = 'folio';
-const STORES = ['catalog', 'kv', 'conversations'];
+const STORES = ['catalog', 'kv', 'conversations', 'priceHistory'];
+// One more store means one more version: the upgrade creates the stores still missing
+const VERSION = 2;
 
 let dbPromise = null;
 
 const openDb = () => {
   dbPromise ??= new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
+    const request = indexedDB.open(DB_NAME, VERSION);
     request.onupgradeneeded = () => {
       for (const name of STORES) {
         if (!request.result.objectStoreNames.contains(name)) request.result.createObjectStore(name);
       }
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      // Another tab opening a newer version: let it upgrade, this one reloads its data later
+      request.result.onversionchange = () => request.result.close();
+      resolve(request.result);
+    };
     request.onerror = () => reject(request.error);
   }).catch(() => null);
   return dbPromise;

@@ -6,6 +6,12 @@ export const CARDMARKET_PRICES_URL = '/cardmarket/productCatalog/priceGuide/pric
 
 const positive = (...values) => values.find((v) => typeof v === 'number' && v > 0) ?? null;
 
+/** Normal and foil price of a price guide entry: the trend, else the average of the last 30 days. */
+export const guidePrices = (guide) => ({
+  eur: positive(guide.trend, guide.avg30),
+  eurFoil: positive(guide['trend-foil'], guide['avg30-foil']),
+});
+
 const groupBy = (items, getKey) => {
   const groups = new Map();
   for (const item of items) {
@@ -27,7 +33,8 @@ const groupBy = (items, getKey) => {
  * @param {object[]} products products_singles_19.json `products`
  * @param {object[]} priceGuides price_guide_19.json `priceGuides`
  * @param {object} index catalog index
- * @returns {Map<string, { eur: number|null, eurFoil: number|null }>} by catalog card id
+ * @returns {Map<string, { idProduct: number, eur: number|null, eurFoil: number|null }>} by catalog card id;
+ *   idProduct finds the card in the price history
  */
 export const matchCardmarketPrices = (products, priceGuides, index) => {
   const guides = new Map(priceGuides.map((g) => [g.idProduct, g]));
@@ -35,12 +42,7 @@ export const matchCardmarketPrices = (products, priceGuides, index) => {
   // Cards whose Cardmarket product is known (LorcanaJSON): exact price, no name matching
   for (const card of index.all) {
     const guide = card.cardmarketId ? guides.get(card.cardmarketId) : null;
-    if (guide) {
-      prices.set(card.id, {
-        eur: positive(guide.trend, guide.avg30),
-        eurFoil: positive(guide['trend-foil'], guide['avg30-foil']),
-      });
-    }
+    if (guide) prices.set(card.id, { idProduct: guide.idProduct, ...guidePrices(guide) });
   }
 
   const named = products.map((p) => ({ ...p, key: normalizeName(p.name) }));
@@ -73,10 +75,7 @@ export const matchCardmarketPrices = (products, priceGuides, index) => {
       group.slice(0, matching.length).forEach((card, i) => {
         const guide = guides.get(matching[i].idProduct);
         if (!guide || prices.has(card.id)) return;
-        prices.set(card.id, {
-          eur: positive(guide.trend, guide.avg30),
-          eurFoil: positive(guide['trend-foil'], guide['avg30-foil']),
-        });
+        prices.set(card.id, { idProduct: guide.idProduct, ...guidePrices(guide) });
       });
     }
   }

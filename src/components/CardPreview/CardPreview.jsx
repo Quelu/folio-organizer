@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -17,13 +18,20 @@ import {
   Ban,
 } from 'lucide-react';
 import TiltCard from '../ui/TiltCard';
+import Sparkline from '../ui/Sparkline';
+import PriceChange from '../ui/PriceChange';
 import { useStore } from '../../hooks/storeContext';
 import { useCollection } from '../../hooks/useCollection';
 import { usePrices } from '../../hooks/usePrices';
+import { usePriceHistory } from '../../hooks/usePriceHistory';
 import { useCatalog } from '../../hooks/catalogContext';
 import { getInk, getLegality, FORMATS, CARD_TYPES } from '../../utils/catalog';
 import { getLorcanaSetName, LORCANA_RARITIES } from '../../data/games';
 import { useCardLang } from '../../hooks/useCardLang';
+import { daysBetween, seriesChange } from '../../utils/priceHistory';
+
+// The price change shown beside the price, as in the collection
+const TREND_DAYS = 30;
 
 // Same moves as the binder's card sheet: the card flips in, then slides sideways between cards
 const slideVariants = {
@@ -120,8 +128,18 @@ const CardInfo = ({ card, foil, onLocate, onOpenDeck, onClose }) => {
   const entry = collection.entries.get(card.key);
   const copies = entry?.copies ?? [];
   const usedBy = decks.filter((d) => d.kind !== 'reference' && d.cards.some((c) => c.key === card.key));
+  const history = usePriceHistory();
   const price = prices.getPrice(card, false);
   const foilPrice = prices.getPrice(card, true);
+  // The price of the copy shown (foil or not) over the last 30 days
+  const trend = useMemo(() => {
+    if (history.status !== 'ready') return null;
+    const points = history.points(TREND_DAYS);
+    const series = points.length > 1 ? history.priceSeries(card, foil, points) : null;
+    const change = seriesChange(series);
+    if (!change) return null;
+    return { series, change, span: daysBetween(history.days[points[0]].day, history.days[points[points.length - 1]].day) };
+  }, [history, card, foil]);
   const isCharacter = card.strength != null || card.willpower != null;
   const typeLabel = card.types.map((t) => CARD_TYPES.find((x) => x.key === t)?.label ?? t).join(' · ');
 
@@ -253,6 +271,15 @@ const CardInfo = ({ card, foil, onLocate, onOpenDeck, onClose }) => {
           )}
           <span className="block text-[10px] text-slate-600">{prices.source}</span>
         </div>
+        {trend && (
+          <div
+            className="flex items-center gap-2 text-xs"
+            title={`${foil ? 'Prix foil' : 'Prix'} : ${prices.format(trend.change.from)} il y a ${trend.span} j, ${prices.format(trend.change.to)} aujourd’hui`}
+          >
+            <Sparkline values={trend.series} width={72} height={24} />
+            <PriceChange ratio={trend.change.ratio} suffix={`${trend.span} j`} />
+          </div>
+        )}
         {index && (
           <div className="flex gap-1.5">
             {FORMATS.map((f) => {

@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { ArrowDownWideNarrow, ArrowUpNarrowWide, LayoutGrid, List, Hexagon } from 'lucide-react';
 import CardThumb from '../ui/CardThumb';
 import CopyButton from '../ui/CopyButton';
+import PriceChange from '../ui/PriceChange';
 import { MoreButton, Segmented } from './CollectionParts';
 import { useChunks } from '../../hooks/useChunks';
 import { useCardLang } from '../../hooks/useCardLang';
@@ -116,6 +117,7 @@ const Row = ({ item, uses, deckColor, format }) => {
       </div>
       <div className={`w-16 text-right text-xs tabular-nums ${item.price == null ? 'text-slate-600' : 'text-slate-300'}`}>
         {format(item.price)}
+        {item.change != null && <PriceChange ratio={item.change} className="block text-[10px]" />}
       </div>
     </li>
   );
