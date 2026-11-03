@@ -167,7 +167,9 @@ export const periodPoints = (days, period) => {
     bucket = b;
     points.push(i);
   }
-  points[points.length - 1] = oldest;
+  // The oldest day stands for its week, unless that week is the latest one: its day is the last
+  if (points.length > 1) points[points.length - 1] = oldest;
+  else if (oldest !== points[0]) points.push(oldest);
   return points.reverse();
 };
 
