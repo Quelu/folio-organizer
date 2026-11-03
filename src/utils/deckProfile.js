@@ -41,24 +41,34 @@ const namesOf = (card) => card.name.split(' & ').map(nameKey);
 
 const isCharacter = (card) => card.types.includes('Character');
 
+const COUNT_WORDS = { a: 1, an: 1 };
+
 /**
  * Shift ability of a card, or null.
  * kind: 'name' (on a character named one of names), 'duo' (on one character of each name),
  * 'class' (on a character of the classification), 'item' (on an item named one of names) or
- * 'universal' (on any character). cost: ink paid, null when it costs a discard instead.
+ * 'universal' (on any character). cost: ink paid, null when it costs something else: discard
+ * ({ count, type }: "Shift: Discard a song card") or drops (ink drops removed).
  */
 export const getShift = (card) => {
   for (const line of (card?.text ?? '').split('\n')) {
-    const m = line.match(/^((?:[A-Z][\w-]* )*)Shift(?::| (\d+))/);
+    const m = line.match(/^((?:[A-Z][\w-]* )*)Shift(?::| (\d+)| Remove)/);
     if (!m) continue;
     // "Temporary Shift" returns to the hand at the end of the turn: same targets
     const prefix = m[1].trim().replace(/^Temporary\s*/, '');
     const cost = m[2] != null ? parseInt(m[2], 10) : null;
-    if (prefix === 'Universal') return { kind: 'universal', cost };
-    if (prefix === '' || prefix === 'Combo') return { kind: 'name', cost, names: namesOf(card) };
-    if (prefix === 'Duo') return { kind: 'duo', cost, names: namesOf(card) };
-    if (/items named/.test(line)) return { kind: 'item', cost, names: [nameKey(prefix)] };
-    return { kind: 'class', cost, classification: prefix };
+    const discard = line.match(/Shift: Discard (an?|\d+) (?:(song|action|character|item|location) )?cards?/);
+    const drops = line.match(/Shift Remove (\d+) ink drops?/);
+    const paid = {
+      cost,
+      ...(discard && { discard: { count: COUNT_WORDS[discard[1]] ?? parseInt(discard[1], 10), type: discard[2] ?? null } }),
+      ...(drops && { drops: parseInt(drops[1], 10) }),
+    };
+    if (prefix === 'Universal') return { kind: 'universal', ...paid };
+    if (prefix === '' || prefix === 'Combo') return { kind: 'name', ...paid, names: namesOf(card) };
+    if (prefix === 'Duo') return { kind: 'duo', ...paid, names: namesOf(card) };
+    if (/items named/.test(line)) return { kind: 'item', ...paid, names: [nameKey(prefix)] };
+    return { kind: 'class', ...paid, classification: prefix };
   }
   return null;
 };
@@ -67,7 +77,7 @@ export const getShift = (card) => {
 const getShiftBase = (card) => {
   const text = card.text ?? '';
   const also = [...text.matchAll(/also counts as being named (.+?) for Shift/g)].map((m) => nameKey(m[1]));
-  return { names: [...namesOf(card), ...also], any: /any character with Shift on this character/i.test(text) };
+  return { names: [...namesOf(card), ...also], any: /any character with Shift on this character|shift any character on top of this character/i.test(text) };
 };
 
 /** Whether a Shift card can go on top of this card for one of its names. */

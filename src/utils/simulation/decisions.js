@@ -14,6 +14,8 @@ const LOCATION_TURNS = 3;
 // A card in hand, a card in the inkwell
 export const HAND_CARD = 0.4;
 const INK_CARD = 0.25;
+// An ink drop: ink for once
+const INK_DROP = 0.15;
 
 const KEYWORD_WORTH = { Evasive: 1, Bodyguard: 0.5, Ward: 0.4, Resist: 0.3, Challenger: 0.15, Support: 0.3, Rush: 0.3, Alert: 0.3, Reckless: -1, Vanish: 0.2, Singer: 0.1 };
 
@@ -50,7 +52,7 @@ export const evaluate = (game, p) => {
   let v = me.lore - opp.lore;
   for (const inst of boardOf(me)) v += valueOf(game, inst);
   for (const inst of boardOf(opp)) v -= valueOf(game, inst);
-  v += HAND_CARD * (me.hand.length - opp.hand.length) + INK_CARD * (me.inkwell - opp.inkwell);
+  v += HAND_CARD * (me.hand.length - opp.hand.length) + INK_CARD * (me.inkwell - opp.inkwell) + INK_DROP * (me.drops - opp.drops);
   if (game.current === p) for (const c of me.characters) if (canQuest(game, c)) v += statOf(game, c, 'lore');
   return v;
 };
@@ -63,11 +65,17 @@ const remapCtx = (clone, ctx) => ({
   ...ctx,
   source: remap(clone, ctx.source),
   targets: (ctx.targets ?? []).map((t) => remap(clone, t)),
+  singers: ctx.singers?.map((s) => remap(clone, s)),
+  location: ctx.location && remap(clone, ctx.location),
+  chosen: null,
+  deferred: null,
   trigger: ctx.trigger && {
     ...ctx.trigger,
     subject: ctx.trigger.subject && remap(clone, ctx.trigger.subject),
     attacker: ctx.trigger.attacker && remap(clone, ctx.trigger.attacker),
     defender: ctx.trigger.defender && remap(clone, ctx.trigger.defender),
+    target: ctx.trigger.target && remap(clone, ctx.trigger.target),
+    source: ctx.trigger.source && remap(clone, ctx.trigger.source),
   },
 });
 
@@ -76,6 +84,18 @@ const effectOutcome = (game, p, ctx, effect) => {
   const clone = cloneGame(game);
   runEffectFor(clone, remapCtx(clone, ctx), effect);
   return evaluate(clone, p);
+};
+
+/** The card a player names ("name a card, then reveal the top card of your deck"): the one their deck holds most copies of. */
+export const nameACard = (game, p) => {
+  const counts = new Map();
+  for (const idx of game.players[p].library) {
+    const title = cardOf(game, p, idx).title;
+    counts.set(title, (counts.get(title) ?? 0) + 1);
+  }
+  let best = null;
+  for (const [title, n] of counts) if (!best || n > best.n) best = { title, n };
+  return best?.title ?? null;
 };
 
 /** The game for player p after fn(copy), with copy.map to find the cards again. */
@@ -89,16 +109,37 @@ export const lookahead = (game, p, fn) => {
 
 const numberOf = (a) => (typeof a === 'number' ? a : typeof a?.value === 'number' ? a.value : 1);
 
+// What the cards of a player's deck are worth on average: a card put back is drawn again as one of them
+const deckWorth = (game, p) => {
+  const lib = game.players[p].library;
+  return lib.length ? lib.reduce((s, idx) => s + cardWorth(cardOf(game, p, idx)), 0) / lib.length : 0;
+};
+
+// The cards under a card in play: in hand, in the inkwell, or gone
+const UNDER_WORTH = { hand: HAND_CARD, 'inkwell-facedown-exerted': INK_CARD };
+
+/** What an effect does to a card out of play (a discard, a hand, under a card), for its owner. */
+const effectOffPlay = (game, effect, inst) => {
+  if (inst.zone === 'hand') {
+    // A card of the hand put back to be drawn again: worth it when the deck holds better
+    return effect.type === 'put-on-bottom' || effect.type === 'shuffle-into-deck' ? 0.1 * (deckWorth(game, inst.owner) - cardWorth(inst.card)) : 0;
+  }
+  if (inst.zone === 'limbo') return effect.type === 'move-cards-from-under' ? (UNDER_WORTH[effect.destination] ?? 0) - 0.1 : 0;
+  // A card in a discard: worth taking back, or putting into the inkwell; away from the discard, a little lost
+  if (effect.type === 'return-to-hand') return HAND_CARD + 0.1 * cardWorth(inst.card);
+  if (effect.type === 'put-into-inkwell') return INK_CARD;
+  return ['put-on-bottom', 'put-on-top', 'shuffle-into-deck'].includes(effect.type) ? -0.05 : 0;
+};
+
 /** What an effect does to a card, for the card's owner: negative when it hurts. */
 const effectOnCard = (game, effect, inst) => {
-  // A card in a discard: worth taking back, or putting into the inkwell
-  if (inst.zone !== 'play') {
-    if (effect.type === 'return-to-hand') return HAND_CARD + 0.1 * cardWorth(inst.card);
-    return effect.type === 'put-into-inkwell' ? INK_CARD : 0;
-  }
+  if (inst.zone !== 'play') return effectOffPlay(game, effect, inst);
   const v = valueOf(game, inst);
   const lore = statOf(game, inst, 'lore');
   switch (effect.type) {
+    case 'move-cards-from-under':
+      // Cards under a card count for some of its abilities; under an opponent's card, they are theirs to lose
+      return -0.1 * (inst.under?.length ?? 0) + (UNDER_WORTH[effect.destination] ?? 0) * (inst.under?.length ?? 0);
     case 'banish':
     case 'put-on-bottom':
     case 'put-on-top':
@@ -157,9 +198,51 @@ const effectOnCard = (game, effect, inst) => {
 /** How much the chooser likes an effect landing on a card. */
 const utility = (game, chooser, effect, inst) => (inst.owner === chooser ? 1 : -1) * effectOnCard(game, effect, inst);
 
-/** The cards a player chooses for an effect: between min and max, the ones they like best (a "may" skips the ones they dislike). */
+// Candidates a choice is played ahead for, at most
+const LOOKAHEAD_CHOICES = 6;
+
+/** The card in play a player picks by playing the effect and the steps after it ahead with each one. */
+const lookaheadChoice = (game, chooser, ctx, effect, candidates) => {
+  let best = null;
+  for (const inst of candidates) {
+    const clone = cloneGame(game);
+    const c = remapCtx(clone, ctx);
+    c.pick = remap(clone, inst);
+    runEffectFor(clone, c, effect, ctx.rest);
+    const v = evaluate(clone, chooser);
+    if (!best || v > best.v) best = { inst, v };
+  }
+  return [best.inst];
+};
+
+/**
+ * The cards a player chooses for an effect: between min and max, the ones they like best (a "may"
+ * skips the ones they dislike). One card in play for the next steps to act on ("exert chosen
+ * character to draw cards equal to their {L}"), or that the effect alone does not tell apart, is
+ * played ahead with each candidate in the real game. ctx.pick: the card a copy of the game is told
+ * to choose.
+ */
 export const chooseCards = (game, chooser, ctx, effect, candidates, min, max) => {
+  if (ctx.pick) {
+    const pick = ctx.pick;
+    ctx.pick = null;
+    if (candidates.includes(pick)) return [pick];
+  }
   const scored = candidates.map((inst) => ({ inst, score: utility(game, chooser, effect, inst) })).sort((a, b) => b.score - a.score);
+  // Only an effect that is itself resolving: a step choosing for another (a move's source) is not played ahead
+  if (
+    game.depth === 0 &&
+    effect === ctx.current &&
+    chooser === ctx.p &&
+    min === 1 &&
+    max === 1 &&
+    candidates.length > 1 &&
+    candidates.length <= LOOKAHEAD_CHOICES &&
+    candidates.every((c) => c.zone === 'play') &&
+    (ctx.rest?.length || scored[0].score === scored.at(-1).score)
+  ) {
+    return lookaheadChoice(game, chooser, ctx, effect, candidates);
+  }
   const picked = [];
   for (const { inst, score } of scored) {
     if (picked.length >= max) break;
