@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ChevronLeft,
@@ -10,6 +11,8 @@ import {
   Hand,
   Layers,
   MapPin,
+  Maximize2,
+  Minimize2,
   Music,
   Pause,
   Play,
@@ -185,6 +188,8 @@ const cardMotion = {
   transition: { type: 'spring', stiffness: 380, damping: 32 },
 };
 
+// The board's cards are sized from --slot, the square a card in play takes (bigger on the expanded board)
+
 /** A card in play: exerted cards lie sideways, the badges tell what happened to it this turn. */
 const Slot = ({ view, side, focus }) => {
   const { card, damage, exerted, isNew, shifted, hurt, quested, challenged, under } = view;
@@ -197,14 +202,14 @@ const Slot = ({ view, side, focus }) => {
       layoutId={`card-${view.id}`}
       {...cardMotion}
       animate={{ opacity: focus && !lit ? 0.35 : 1, scale: 1 }}
-      className="flex flex-col items-center gap-1 w-[84px]"
+      className="flex flex-col items-center gap-1 w-[var(--slot)]"
     >
-      <div className="relative w-[84px] h-[84px] flex items-center justify-center">
+      <div className="relative w-[var(--slot)] h-[var(--slot)] flex items-center justify-center">
         <motion.div
           initial={false}
           animate={{ rotate: exerted ? 90 : 0 }}
           transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-          className={location ? 'w-[84px]' : 'w-[60px]'}
+          className={location ? 'w-[var(--slot)]' : 'w-[calc(var(--slot)*5/7)]'}
         >
           <Thumb
             card={card}
@@ -273,11 +278,11 @@ const Ghost = ({ view, focus }) => {
       layout
       {...cardMotion}
       animate={{ opacity: focus && !lit ? 0.35 : 1, scale: 1 }}
-      className="flex flex-col items-center gap-1 w-[84px]"
+      className="flex flex-col items-center gap-1 w-[var(--slot)]"
       title={`${view.card.name} : ${label} ce tour`}
     >
-      <div className="relative w-[84px] h-[84px] flex items-center justify-center">
-        <div className={`${view.card.kind === 'location' ? 'w-[84px]' : 'w-[60px]'} opacity-30 grayscale`}>
+      <div className="relative w-[var(--slot)] h-[var(--slot)] flex items-center justify-center">
+        <div className={`${view.card.kind === 'location' ? 'w-[var(--slot)]' : 'w-[calc(var(--slot)*5/7)]'} opacity-30 grayscale`}>
           <Thumb card={view.card} sideways={view.card.kind === 'location'} ring={lit ? 'ring-2 ring-white' : undefined} />
         </div>
         <Icon size={22} className="absolute text-slate-200 drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)] pointer-events-none" aria-hidden />
@@ -351,7 +356,7 @@ const PlayerBar = ({ p, label, style, side, active, deck }) => {
           {now.hand.map((idx) => {
             const n = (seen.get(idx) ?? 0) + 1;
             seen.set(idx, n);
-            return <Thumb key={`${idx}-${n}`} card={deck.cards[idx]} className="w-[30px] rounded-[4px]" />;
+            return <Thumb key={`${idx}-${n}`} card={deck.cards[idx]} className="w-[calc(var(--slot)*0.36)] rounded-[4px]" />;
           })}
         </span>
       )}
@@ -364,7 +369,7 @@ const PlayArea = ({ p, side, focus }) => {
   const { groups, characters, items } = arrange(side.cards);
   const empty = !side.cards.length && !side.left.length;
   return (
-    <div className="flex flex-wrap items-start gap-2 min-h-[104px]">
+    <div className="flex flex-wrap items-start gap-2 min-h-[calc(var(--slot)_+_20px)]">
       {empty && <p className="self-center text-xs text-slate-600">Aucune carte en jeu</p>}
       <AnimatePresence mode="popLayout" initial={false}>
         {/* A location framed with the characters at it */}
@@ -401,13 +406,16 @@ const PlayArea = ({ p, side, focus }) => {
   );
 };
 
-/** Both players across the table: deck B on top, deck A at the bottom, the player whose turn it is tinted. */
-const Board = ({ turn, run, focus }) => {
+/**
+ * Both players across the table: deck B on top, deck A at the bottom, the player whose turn it is
+ * tinted. fill: the board takes the height it is given, each player's bar at its edge of the table.
+ */
+const Board = ({ turn, run, focus, fill }) => {
   const { snap, sides } = turn;
   const area = (p) => (
     <div
       // Room around the middle line for the turn's marker
-      className={`px-3 sm:px-4 space-y-3 transition-colors ${p === 1 ? 'pt-3 pb-5' : 'pt-5 pb-3'}`}
+      className={`px-3 sm:px-4 space-y-3 transition-colors ${p === 1 ? 'pt-3 pb-5' : 'pt-5 pb-3'} ${fill ? 'flex-1 flex flex-col justify-between' : ''}`}
       style={{ background: snap.turn > 0 && snap.current === p ? `${SERIES[p]}0f` : undefined }}
     >
       {p === 0 && <PlayArea p={p} side={sides[p]} focus={focus} />}
@@ -416,9 +424,13 @@ const Board = ({ turn, run, focus }) => {
     </div>
   );
   return (
-    <div className="rounded-xl bg-slate-950/40 ring-1 ring-inset ring-white/5 overflow-hidden">
+    <div
+      className={`rounded-xl bg-slate-950/40 ring-1 ring-inset ring-white/5 ${
+        fill ? 'flex flex-col lg:h-full lg:overflow-y-auto scrollbar-thin' : 'overflow-hidden'
+      }`}
+    >
       {area(1)}
-      <div className="relative h-px bg-white/10">
+      <div className="relative h-px flex-shrink-0 bg-white/10">
         {snap.turn > 0 && (
           <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-900 ring-1 ring-white/10 text-[10px] text-slate-400 whitespace-nowrap">
             <span className="w-1.5 h-1.5 rounded-sm" style={{ background: SERIES[snap.current] }} />
@@ -534,14 +546,14 @@ const Timeline = ({ snapshots, at, onSelect, labels }) => {
   );
 };
 
-const IconButton = ({ icon: Icon, label, onClick, disabled }) => (
-  <button type="button" onClick={onClick} disabled={disabled} className="btn-icon p-1.5" aria-label={label} title={label}>
+const IconButton = ({ icon: Icon, label, onClick, disabled, ref }) => (
+  <button ref={ref} type="button" onClick={onClick} disabled={disabled} className="btn-icon p-1.5" aria-label={label} title={label}>
     <Icon size={16} />
   </button>
 );
 
 /** What the player did this turn: a summary, the cards played, the log lines (hovering one lights up its cards). */
-const TurnPanel = ({ turn, run, replay, cards, focusLine, onFocusLine, last }) => {
+const TurnPanel = ({ turn, run, replay, cards, focusLine, onFocusLine, last, className = '' }) => {
   const { snap, sides, lines } = turn;
   const { result } = replay;
   const me = sides[snap.current];
@@ -558,7 +570,7 @@ const TurnPanel = ({ turn, run, replay, cards, focusLine, onFocusLine, last }) =
     : [];
 
   return (
-    <div className="space-y-3 min-w-0">
+    <div className={`space-y-3 min-w-0 ${className}`}>
       <div className="flex items-center gap-2">
         <span className="text-sm font-semibold text-white">{snap.turn ? `Tour ${roundOf(snap.turn)}` : 'Mise en place'}</span>
         {snap.turn > 0 && (
@@ -619,16 +631,20 @@ const TurnPanel = ({ turn, run, replay, cards, focusLine, onFocusLine, last }) =
 };
 
 /**
- * A replayed game on a board: the timeline of its turns, the board at the end of the chosen
- * turn and what happened during it. ← → move through the turns.
+ * A replayed game on a board: the board at the end of the chosen turn and what happened during
+ * it, the timeline of its turns below. ← → move through the turns. expanded: the board fills most
+ * of the screen, over the page, with title above it; Esc or the backdrop brings it back in the page.
  */
-const GameReplay = ({ run, replay, cards }) => {
+const GameReplay = ({ run, replay, cards, expanded = false, onExpand, title }) => {
   const { snapshots, log } = replay;
   const last = snapshots.length - 1;
   const [at, setAt] = useState(0);
   const [playing, setPlaying] = useState(false);
   // Cards of the hovered log line, for the turn it belongs to
   const [focus, setFocus] = useState(null);
+  const dialogRef = useRef(null);
+  const expandRef = useRef(null);
+  const wasExpanded = useRef(expanded);
   const linesByTurn = useMemo(() => {
     const byTurn = snapshots.map(() => []);
     for (const line of log) byTurn[line.turn]?.push(line);
@@ -658,50 +674,119 @@ const GameReplay = ({ run, replay, cards }) => {
     go(to);
   };
 
-  return (
-    <div className="space-y-3" onKeyDown={onKey}>
-      <div className="space-y-1">
-        <Timeline
-          snapshots={snapshots}
-          at={at}
-          labels={run.labels}
-          onSelect={(i) => {
-            setPlaying(false);
-            go(i);
-          }}
-        />
-        <div className="flex items-center gap-1">
-          <IconButton icon={SkipBack} label="Début de la partie" onClick={() => go(0)} disabled={at === 0} />
-          <IconButton icon={ChevronLeft} label="Tour précédent (←)" onClick={() => go(at - 1)} disabled={at === 0} />
-          <button type="button" onClick={togglePlay} className="btn-secondary px-3 py-1.5 text-xs" aria-pressed={playing}>
-            {playing ? <Pause size={13} /> : <Play size={13} />}
-            {playing ? 'Pause' : 'Lecture'}
-          </button>
-          <IconButton icon={ChevronRight} label="Tour suivant (→)" onClick={() => go(at + 1)} disabled={at === last} />
-          <IconButton icon={SkipForward} label="Fin de la partie" onClick={() => go(last)} disabled={at === last} />
-          <span className="ml-2 text-xs text-slate-500 tabular-nums">
-            {at} / {last}
-          </span>
-          <span className="ml-auto hidden sm:flex items-center gap-1 text-[11px] text-slate-500">
-            <span className="kbd">←</span>
-            <span className="kbd">→</span>
-            pour changer de tour
-          </span>
-        </div>
-      </div>
-      <div className="grid lg:grid-cols-[minmax(0,1fr)_17rem] gap-4 items-start">
-        <Board turn={turn} run={run} focus={focused} />
-        <TurnPanel
-          turn={turn}
-          run={run}
-          replay={replay}
-          cards={cards}
-          focusLine={focused}
-          onFocusLine={(ids) => setFocus(ids ? { at, ids: new Set(ids) } : null)}
-          last={at === last}
-        />
+  // Keys go to the expanded board wherever the focus is (the card preview catches them first while open)
+  useEffect(() => {
+    if (!expanded) return;
+    const onWindowKey = (e) => (e.key === 'Escape' ? onExpand(false) : onKey(e));
+    window.addEventListener('keydown', onWindowKey);
+    return () => window.removeEventListener('keydown', onWindowKey);
+  });
+
+  // The focus follows the board in and out of the page
+  useEffect(() => {
+    if (expanded) dialogRef.current?.focus();
+    else if (wasExpanded.current) expandRef.current?.focus();
+    wasExpanded.current = expanded;
+  }, [expanded]);
+
+  const board = (
+    <div
+      className={
+        expanded
+          ? 'flex-1 min-h-0 overflow-y-auto lg:overflow-visible scrollbar-thin grid gap-4 lg:grid-cols-[minmax(0,1fr)_19rem] lg:grid-rows-[minmax(0,1fr)]'
+          : 'grid lg:grid-cols-[minmax(0,1fr)_17rem] gap-4 items-start'
+      }
+    >
+      <Board turn={turn} run={run} focus={focused} fill={expanded} />
+      <TurnPanel
+        turn={turn}
+        run={run}
+        replay={replay}
+        cards={cards}
+        focusLine={focused}
+        onFocusLine={(ids) => setFocus(ids ? { at, ids: new Set(ids) } : null)}
+        last={at === last}
+        className={expanded ? 'lg:overflow-y-auto scrollbar-thin lg:pr-2' : ''}
+      />
+    </div>
+  );
+
+  const timeline = (
+    <div className="space-y-1">
+      <Timeline
+        snapshots={snapshots}
+        at={at}
+        labels={run.labels}
+        onSelect={(i) => {
+          setPlaying(false);
+          go(i);
+        }}
+      />
+      <div className="flex items-center gap-1">
+        <IconButton icon={SkipBack} label="Début de la partie" onClick={() => go(0)} disabled={at === 0} />
+        <IconButton icon={ChevronLeft} label="Tour précédent (←)" onClick={() => go(at - 1)} disabled={at === 0} />
+        <button type="button" onClick={togglePlay} className="btn-secondary px-3 py-1.5 text-xs" aria-pressed={playing}>
+          {playing ? <Pause size={13} /> : <Play size={13} />}
+          {playing ? 'Pause' : 'Lecture'}
+        </button>
+        <IconButton icon={ChevronRight} label="Tour suivant (→)" onClick={() => go(at + 1)} disabled={at === last} />
+        <IconButton icon={SkipForward} label="Fin de la partie" onClick={() => go(last)} disabled={at === last} />
+        <span className="ml-2 text-xs text-slate-500 tabular-nums">
+          {at} / {last}
+        </span>
+        <span className="ml-auto hidden sm:flex items-center gap-1 text-[11px] text-slate-500">
+          <span className="kbd">←</span>
+          <span className="kbd">→</span>
+          pour changer de tour
+        </span>
+        {!expanded && onExpand && (
+          <IconButton ref={expandRef} icon={Maximize2} label="Agrandir le plateau" onClick={() => onExpand(true)} />
+        )}
       </div>
     </div>
+  );
+
+  if (!expanded) {
+    return (
+      <div className="space-y-3 [--slot:84px]" onKeyDown={onKey}>
+        {board}
+        {timeline}
+      </div>
+    );
+  }
+
+  return createPortal(
+    <>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        onClick={() => onExpand(false)}
+        className="fixed inset-0 bg-slate-950/80 z-40 backdrop-blur-sm"
+      />
+      <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+        <motion.div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Partie rejouée"
+          tabIndex={-1}
+          data-preview-group
+          initial={{ opacity: 0, scale: 0.97 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+          // The cards grow with the screen, as long as both players' fit in its height and a row in its width
+          className="surface pointer-events-auto w-[90vw] h-[90dvh] rounded-2xl flex flex-col gap-3 p-3 sm:p-5 outline-none [--slot:clamp(84px,min(13vh,11vw),124px)]"
+        >
+          <div className="flex items-start gap-3">
+            <div className="flex-1 min-w-0">{title}</div>
+            <IconButton icon={Minimize2} label="Réduire le plateau (Échap)" onClick={() => onExpand(false)} />
+          </div>
+          {board}
+          {timeline}
+        </motion.div>
+      </div>
+    </>,
+    document.body
   );
 };
 

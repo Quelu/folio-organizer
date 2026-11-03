@@ -408,10 +408,16 @@ const VIEWS = [
 const LogPanel = ({ run }) => {
   const [n, setN] = useState(null);
   const [view, setView] = useState('board');
+  // The board over the page, most of the screen
+  const [expanded, setExpanded] = useState(false);
   const replay = useMemo(() => (n == null ? null : replayGame(run, n)), [run, n]);
   const cards = useMemo(() => logCards(run.decks), [run.decks]);
   const { labels } = run;
-  const pick = () => setN(Math.floor(Math.random() * run.tally.games));
+  const pick = () => {
+    // The first game opens on the big board, the next ones where the board is
+    if (n == null && view === 'board') setExpanded(true);
+    setN(Math.floor(Math.random() * run.tally.games));
+  };
 
   const summary = replay
     ? `Partie n° ${formatNumber(n + 1)} · ${labels[replay.result.first]} commence · ${
@@ -440,7 +446,29 @@ const LogPanel = ({ run }) => {
         <>
           <p className="text-xs text-slate-300 mb-3">{summary}</p>
           {view === 'board' ? (
-            <GameReplay key={n} run={run} replay={replay} cards={cards} />
+            <GameReplay
+              key={n}
+              run={run}
+              replay={replay}
+              cards={cards}
+              expanded={expanded}
+              onExpand={setExpanded}
+              title={
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                  <div className="min-w-0">
+                    <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
+                      <ScrollText size={15} className="text-indigo-300" />
+                      Journal d'une partie
+                    </h2>
+                    <p className="text-xs text-slate-300 mt-1">{summary}</p>
+                  </div>
+                  <button onClick={pick} className="btn-secondary px-3 py-1.5 text-xs flex-shrink-0">
+                    <Shuffle size={13} />
+                    Une autre
+                  </button>
+                </div>
+              }
+            />
           ) : (
             <ol data-preview-group className="max-h-96 overflow-auto scrollbar-thin space-y-1 text-xs">
               {replay.log.map((line, i) => {
