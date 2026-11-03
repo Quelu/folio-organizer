@@ -140,10 +140,18 @@ export const useAutoBackup = (state) => {
     }
   }, []);
 
+  /**
+   * Asks again for the right to write. Chrome can refuse without asking (an earlier refusal, the
+   * site settings): picking the folder again gives the right back, and a failed pick says so.
+   */
   const resume = useCallback(async () => {
     const permission = await folder?.requestPermission({ mode: 'readwrite' }).catch(() => 'denied');
-    setStatus(permission === 'granted' ? 'on' : 'paused');
-  }, [folder]);
+    if (permission === 'granted') {
+      setStatus('on');
+      return;
+    }
+    if (!(await choose())) setStatus('error');
+  }, [folder, choose]);
 
   const stop = useCallback(async () => {
     await idbDelete('kv', FOLDER_KEY);
