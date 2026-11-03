@@ -1,5 +1,4 @@
 import {
-  LORE_TO_WIN,
   activate,
   activatedOf,
   boost,
@@ -13,12 +12,18 @@ import {
   challenge,
   challengeOutcome,
   challengeTargets,
+  canPayShift,
   costOf,
   inkCard,
+  inksFromDiscard,
+  isInkable,
   isRestricted,
   keywordOf,
+  inksLeft,
+  loreToWin,
   mayPlay,
   moveCharacter,
+  playableElsewhere,
   playCard,
   quest,
   singValue,
@@ -26,6 +31,7 @@ import {
   strengthOf,
 } from './engine.js';
 import { evaluate, lookahead, valueOf } from './decisions.js';
+import { canPayAlternative } from './effects.js';
 
 /**
  * The players of the simulations: simple rules weighted by the deck's style. Every value is in
@@ -92,17 +98,28 @@ const keepScore = (style, game, p, card) => {
   return shiftReady - Math.abs(card.cost - (me.inkwell + 2));
 };
 
-const inkTurn = (style, params, game, p) => {
+/** Inks a card if the pilot wants to; returns whether it did. */
+const inkOne = (style, params, game, p) => {
   const me = game.players[p];
-  const inkable = me.hand.map((idx, pos) => ({ pos, card: cardOf(game, p, idx) })).filter((x) => x.card.inkwell);
-  if (!inkable.length) return;
+  // A card of the discard is ink that costs nothing in hand ("you can ink cards from your discard")
+  if (inksFromDiscard(game, p)) {
+    const pos = me.discard.findIndex((idx) => isInkable(game, p, cardOf(game, p, idx), false));
+    if (pos >= 0 && inkCard(game, p, pos, { discard: true })) return true;
+  }
+  const inkable = me.hand.map((idx, pos) => ({ pos, card: cardOf(game, p, idx) })).filter((x) => isInkable(game, p, x.card));
+  if (!inkable.length) return false;
   const wants =
     me.inkwell < params.inkUntil ||
     inkable.some((x) => !isPlayable(x.card)) ||
     me.hand.some((idx) => isPlayable(cardOf(game, p, idx)) && cardOf(game, p, idx).cost > me.inkwell);
-  if (!wants) return;
+  if (!wants) return false;
   const pick = inkable.reduce((a, b) => (keepScore(style, game, p, b.card) < keepScore(style, game, p, a.card) ? b : a));
-  inkCard(game, p, pick.pos);
+  return inkCard(game, p, pick.pos);
+};
+
+// Once a turn, more when an ability allows it ("you may put an additional card into your inkwell")
+const inkTurn = (style, params, game, p) => {
+  while (inksLeft(game, p) > 0 && inkOne(style, params, game, p));
 };
 
 /**
@@ -124,7 +141,10 @@ const singersFor = (game, p, song) => {
   return null;
 };
 
-/** What the pilot can do in its main phase: play a card from hand (paid, shifted or sung), use an ability, Boost, move to a location. */
+/**
+ * What the pilot can do in its main phase: play a card from hand (paid, shifted, sung or for an
+ * alternative cost) or from elsewhere when allowed, use an ability, Boost, move to a location.
+ */
 const options = (game, p) => {
   const me = game.players[p];
   const out = [];
@@ -135,17 +155,23 @@ const options = (game, p) => {
     const card = cardOf(game, p, idx);
     if (!mayPlay(game, p, card) || (card.kind === 'action' && !card.abilities?.action)) return;
     if (costOf(game, p, card) <= me.ink) out.push({ kind: 'play', pos, card });
-    if (card.shift && costOf(game, p, card, { shift: true }) <= me.ink) {
-      const bases = me.characters.filter((c) => card.shift.bases.includes(c.card.key));
-      // A ready, dry base passes it on: the new character acts at once
-      const base = bases.find((c) => !c.exerted && c.playedTurn < game.turn) ?? bases[0];
-      if (base) out.push({ kind: 'play', pos, card, base });
-    }
+    const bases = card.shift ? me.characters.filter((c) => card.shift.bases.includes(c.card.key)) : [];
+    // A ready, dry base passes it on: the new character acts at once
+    const base = bases.find((c) => !c.exerted && c.playedTurn < game.turn) ?? bases[0];
+    if (base && costOf(game, p, card, { shift: true, base }) <= me.ink && canPayShift(game, p, card, pos)) out.push({ kind: 'play', pos, card, base });
     if (card.song) {
       const singers = singersFor(game, p, card);
       if (singers) out.push({ kind: 'play', pos, card, singers });
     }
+    for (const alt of card.abilities?.altCosts ?? []) {
+      if ((!alt.shift || base) && canPayAlternative(game, p, card, alt)) out.push({ kind: 'play', pos, card, alt, base: alt.shift ? base : null });
+    }
   });
+  for (const o of playableElsewhere(game, p)) {
+    if (mayPlay(game, p, o.card) && costOf(game, p, o.card) <= me.ink && (o.card.kind !== 'action' || o.card.abilities?.action)) {
+      out.push({ kind: 'play', pos: o.pos, card: o.card, zone: o.zone, exerted: o.exerted });
+    }
+  }
   for (const inst of [...me.characters, ...me.items, ...me.locations]) {
     for (const ability of activatedOf(game, inst)) {
       if (canActivate(game, p, inst, ability)) out.push({ kind: 'activate', inst, ability });
@@ -167,16 +193,31 @@ const perform = (game, p, o) => {
   if (o.kind === 'activate') return activate(game, p, o.inst, o.ability);
   if (o.kind === 'boost') return boost(game, p, o.inst);
   if (o.kind === 'move') return moveCharacter(game, p, o.inst, o.loc);
-  return playCard(game, p, o.pos, { base: o.base ?? null, exerted: entersExerted(game, p, o.card, o.base), singers: o.singers ?? null });
+  return playCard(game, p, o.pos, {
+    base: o.base ?? null,
+    exerted: !!o.exerted || entersExerted(game, p, o.card, o.base),
+    singers: o.singers ?? null,
+    zone: o.zone ?? null,
+    alt: o.alt ?? null,
+  });
+};
+
+/** The same zone of a copy of the game: the hand, the discard, or the cards under a card. */
+const zoneInCopy = (game, clone, p, zone) => {
+  if (!zone) return null;
+  if (zone === game.players[p].discard) return clone.players[p].discard;
+  const holder = [...game.players[p].characters, ...game.players[p].items, ...game.players[p].locations].find((c) => c.under === zone);
+  return holder ? clone.map.get(holder).under : zone;
 };
 
 /** The same option in a copy of the game, its cards found again in the copy. */
-const inCopy = (clone, o) => ({
+const inCopy = (game, clone, p, o) => ({
   ...o,
   base: o.base && clone.map.get(o.base),
   singers: o.singers?.map((s) => clone.map.get(s)),
   inst: o.inst && clone.map.get(o.inst),
   loc: o.loc && clone.map.get(o.loc),
+  zone: zoneInCopy(game, clone, p, o.zone),
 });
 
 /**
@@ -191,7 +232,7 @@ const mainPhase = (game, p) => {
     const now = evaluate(game, p);
     let best = null;
     for (const o of list) {
-      const gain = lookahead(game, p, (clone) => perform(clone, p, inCopy(clone, o))) - now;
+      const gain = lookahead(game, p, (clone) => perform(clone, p, inCopy(game, clone, p, o))) - now;
       const score = gain + (o.kind === 'play' && !o.singers ? 0.05 * o.card.cost : 0);
       if (!best || score > best.score) best = { o, score, gain };
     }
@@ -281,13 +322,13 @@ const takeTurn = (style, params) => (game, p) => {
 
   // Enough lore within reach: quest with everyone and win
   const questers = me.characters.filter((c) => canQuest(game, c));
-  if (me.lore + questers.reduce((s, c) => s + statOf(game, c, 'lore'), 0) >= LORE_TO_WIN) {
+  if (me.lore + questers.reduce((s, c) => s + statOf(game, c, 'lore'), 0) >= loreToWin(game, p)) {
     for (const c of questers) if (!game.over && c.zone === 'play' && canQuest(game, c)) quest(game, p, c);
     return;
   }
 
   // The opponent wins next turn unless some of their characters go
-  const danger = opponentReach(game, p) >= LORE_TO_WIN;
+  const danger = opponentReach(game, p) >= loreToWin(game, 1 - p);
   supportTurn(game, p, params, danger);
   if (game.over) return;
   for (;;) {
@@ -304,7 +345,7 @@ const takeTurn = (style, params) => (game, p) => {
     if (best) challenge(game, p, c, best.target);
   }
   // Still losing next turn: no character is worth keeping back
-  const allIn = opponentReach(game, p) >= LORE_TO_WIN;
+  const allIn = opponentReach(game, p) >= loreToWin(game, 1 - p);
   for (const c of [...me.characters]) {
     if (game.over) return;
     if (c.zone !== 'play' || !canQuest(game, c)) continue;

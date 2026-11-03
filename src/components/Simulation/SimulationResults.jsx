@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { Swords, Timer, TrendingUp, Layers, ScrollText, Shuffle, ArrowUp, ArrowDown } from 'lucide-react';
+import { Swords, Timer, TrendingUp, Layers, ScrollText, Shuffle, ArrowUp, ArrowDown, LayoutDashboard, List } from 'lucide-react';
 import { Panel, Segmented } from '../Collection/CollectionParts';
 import { replayGame } from '../../hooks/useSimulation';
+import { useWidth } from '../../hooks/useWidth';
 import { LORE_TO_WIN } from '../../utils/handStats';
 import { CURVE_ROUNDS, IMPACT_MIN_GAMES, cardImpact, gameLength, loreCurve, winRate } from '../../utils/simulation/stats';
-import { SERIES, STATUS, SURFACE, formatNumber, formatPoints } from './shared';
+import { SERIES, STATUS, SURFACE, formatNumber, formatPoints, logCards } from './shared';
 import CardName from './CardName';
+import LogText from './LogText';
+import GameReplay from './GameReplay';
 
 const formatPercent = (x, digits = 0) => `${(x * 100).toLocaleString('fr-BE', { maximumFractionDigits: digits })} %`;
 const formatMargin = (margin) => `± ${formatPoints(margin)}`;
@@ -191,18 +194,6 @@ const LengthPanel = ({ run }) => {
 // Lore chart geometry, in pixels
 const H = 220;
 const PAD = { left: 30, right: 40, top: 12, bottom: 26 };
-
-/** Width of an element, followed as it resizes. */
-const useWidth = () => {
-  const ref = useRef(null);
-  const [width, setWidth] = useState(0);
-  useEffect(() => {
-    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
-    observer.observe(ref.current);
-    return () => observer.disconnect();
-  }, []);
-  return [ref, width];
-};
 
 /** Average lore of each deck at the end of each round, with a crosshair. */
 const LoreChart = ({ curves, labels, rounds }) => {
@@ -408,32 +399,25 @@ const ImpactPanel = ({ run }) => {
 
 const REASONS = { lore: `${LORE_TO_WIN} lore`, deckout: 'deck adverse vide', timeout: 'limite de tours' };
 
-const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const VIEWS = [
+  { value: 'board', label: 'Plateau', icon: LayoutDashboard },
+  { value: 'log', label: 'Texte', icon: List },
+];
 
-/**
- * The cards of both decks by name, and a pattern finding those names in the log's sentences:
- * longest first, so a name never cuts a longer one short.
- */
-const logCards = (decks) => {
-  const byName = new Map(decks.flatMap((d) => d.cards.map((card) => [card.name, card])));
-  const names = [...byName.keys()].sort((a, b) => b.length - a.length).map(escapeRegExp);
-  const pattern = names.length ? new RegExp(`(?<![\\p{L}\\p{N}])(${names.join('|')})(?![\\p{L}\\p{N}])`, 'u') : null;
-  return { byName, pattern };
-};
-
-/** A log sentence, its card names showing their card on hover. */
-const LogText = ({ text, cards }) =>
-  cards.pattern
-    ? text.split(cards.pattern).map((part, i) => (i % 2 ? <CardName key={i} card={cards.byName.get(part)} className="text-slate-100" /> : part))
-    : text;
-
-/** One game of the run played again, turn by turn, to check how the pilots play. */
+/** One game of the run played again, turn by turn on a board or as text, to check how the pilots play. */
 const LogPanel = ({ run }) => {
   const [n, setN] = useState(null);
+  const [view, setView] = useState('board');
+  // The board over the page, most of the screen
+  const [expanded, setExpanded] = useState(false);
   const replay = useMemo(() => (n == null ? null : replayGame(run, n)), [run, n]);
   const cards = useMemo(() => logCards(run.decks), [run.decks]);
   const { labels } = run;
-  const pick = () => setN(Math.floor(Math.random() * run.tally.games));
+  const pick = () => {
+    // The first game opens on the big board, the next ones where the board is
+    if (n == null && view === 'board') setExpanded(true);
+    setN(Math.floor(Math.random() * run.tally.games));
+  };
 
   const summary = replay
     ? `Partie n° ${formatNumber(n + 1)} · ${labels[replay.result.first]} commence · ${
@@ -447,33 +431,62 @@ const LogPanel = ({ run }) => {
     <Panel
       icon={ScrollText}
       title="Journal d'une partie"
-      hint="Une partie de la simulation rejouée à l'identique, pour vérifier les choix des pilotes."
+      hint="Une partie de la simulation rejouée à l'identique, tour par tour : le plateau à la fin de chaque tour et ce que chaque joueur y a fait, pour vérifier les choix des pilotes."
       action={
-        <button onClick={pick} className="btn-secondary px-3 py-1.5 text-xs flex-shrink-0">
-          <Shuffle size={13} />
-          {replay ? 'Une autre' : 'Voir une partie'}
-        </button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {replay && <Segmented options={VIEWS} value={view} onChange={setView} label="Affichage de la partie" />}
+          <button onClick={pick} className="btn-secondary px-3 py-1.5 text-xs flex-shrink-0">
+            <Shuffle size={13} />
+            {replay ? 'Une autre' : 'Voir une partie'}
+          </button>
+        </div>
       }
     >
       {replay && (
         <>
           <p className="text-xs text-slate-300 mb-3">{summary}</p>
-          <ol data-preview-group className="max-h-96 overflow-auto scrollbar-thin space-y-1 text-xs">
-            {replay.log.map((line, i) => {
-              const prev = replay.log[i - 1];
-              const newRound = !prev || prev.round !== line.round;
-              return (
-                <li key={i} className={`flex items-start gap-2 ${newRound && i ? 'pt-2 mt-1 border-t border-white/5' : ''}`}>
-                  <span className="w-12 flex-shrink-0 text-slate-500 tabular-nums">{newRound ? (line.round ? `Tour ${line.round}` : 'Début') : ''}</span>
-                  <span className="w-2 h-2 rounded-sm mt-1 flex-shrink-0" style={{ background: SERIES[line.player] }} />
-                  <span className="text-slate-300">
-                    <span className="text-slate-500">{labels[line.player]} </span>
-                    <LogText text={line.text} cards={cards} />
-                  </span>
-                </li>
-              );
-            })}
-          </ol>
+          {view === 'board' ? (
+            <GameReplay
+              key={n}
+              run={run}
+              replay={replay}
+              cards={cards}
+              expanded={expanded}
+              onExpand={setExpanded}
+              title={
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                  <div className="min-w-0">
+                    <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
+                      <ScrollText size={15} className="text-indigo-300" />
+                      Journal d'une partie
+                    </h2>
+                    <p className="text-xs text-slate-300 mt-1">{summary}</p>
+                  </div>
+                  <button onClick={pick} className="btn-secondary px-3 py-1.5 text-xs flex-shrink-0">
+                    <Shuffle size={13} />
+                    Une autre
+                  </button>
+                </div>
+              }
+            />
+          ) : (
+            <ol data-preview-group className="max-h-96 overflow-auto scrollbar-thin space-y-1 text-xs">
+              {replay.log.map((line, i) => {
+                const prev = replay.log[i - 1];
+                const newRound = !prev || prev.round !== line.round;
+                return (
+                  <li key={i} className={`flex items-start gap-2 ${newRound && i ? 'pt-2 mt-1 border-t border-white/5' : ''}`}>
+                    <span className="w-12 flex-shrink-0 text-slate-500 tabular-nums">{newRound ? (line.round ? `Tour ${line.round}` : 'Début') : ''}</span>
+                    <span className="w-2 h-2 rounded-sm mt-1 flex-shrink-0" style={{ background: SERIES[line.player] }} />
+                    <span className="text-slate-300">
+                      <span className="text-slate-500">{labels[line.player]} </span>
+                      <LogText text={line.text} cards={cards} />
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
         </>
       )}
     </Panel>

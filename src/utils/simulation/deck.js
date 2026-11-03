@@ -1,4 +1,5 @@
 import { abilityCount, compileAbilities } from './abilities.js';
+import { fixAbilities } from './fixes.js';
 
 /**
  * A deck as the simulation plays it: one entry per card with its stats, keywords and the
@@ -9,9 +10,10 @@ import { abilityCount, compileAbilities } from './abilities.js';
 
 // Keyword lines the engine plays
 const PLAYED_KEYWORD = /^(Evasive|Bodyguard|Rush|Ward|Reckless|Support|Alert|Vanish|Resist \+\d+|Challenger \+\d+|Singer \d+|Sing Together \d+|Boost \d+)\b/;
-const SHIFT_LINE = /^(?:[A-Z][\w-]* )*Shift(?::| \d+)/;
-// Any keyword line, played or not: the abilities in cardAbilities.json are the other lines
-const KEYWORD_LINE = /^(?:Evasive|Bodyguard|Rush|Ward|Reckless|Support|Alert|Vanish|Resist|Challenger|Singer|Sing Together|Boost|(?:[A-Z][\w-]* )*Shift)\b/;
+const SHIFT_LINE = /^(?:[A-Z][\w-]* )*Shift(?::| \d+| Remove)/;
+// Any keyword line, played or not: the abilities in cardAbilities.json are the other lines ("Shift a
+// character from your discard" is an action's effect, not the keyword)
+const KEYWORD_LINE = /^(?:Evasive|Bodyguard|Rush|Ward|Reckless|Support|Alert|Vanish|Resist|Challenger|Singer|Sing Together|Boost|(?:[A-Z][\w-]* )*Shift(?=:| \d| Remove))\b/;
 
 // A card's worth for each ability it keeps using while in play (lore)
 const ABILITY_WORTH = 0.4;
@@ -64,7 +66,7 @@ const abilityKey = (key) => key.replace(/’/g, "'");
 const coverageOf = (card, kind, shift, compiled, noBase) => {
   const lines = ruleLines(card);
   // Shift is played onto a base of the deck; with no base in the deck, it never comes up
-  const played = (line) => PLAYED_KEYWORD.test(line) || (SHIFT_LINE.test(line) && (shift?.cost != null || noBase));
+  const played = (line) => PLAYED_KEYWORD.test(line) || (SHIFT_LINE.test(line) && (!!shift || noBase));
   const missingKeywords = lines.filter((l) => KEYWORD_LINE.test(l) && !played(l)).map((l) => l.match(KEYWORD_LINE)[0]);
   const hasAbilities = lines.some((l) => !KEYWORD_LINE.test(l));
   const unsupported = [...missingKeywords, ...(compiled?.unsupported ?? [])];
@@ -79,25 +81,28 @@ const coverageOf = (card, kind, shift, compiled, noBase) => {
  * @param {Function} nameOf card => name shown in the results and the game logs
  * @param {Object<string, object[]>|null} abilities the cards of cardAbilities.json (null: not
  *   loaded, only stats and keywords are played)
- * @returns {{ cards: object[], copies: number[], coverage: { total: number, played: number,
- *   ignored: { index: number, qty: number, reason: string, unsupported: string[] }[] } }}
+ * @returns {{ cards: object[], copies: number[], fromDiscard: Object<string, number[]>, coverage: { total: number,
+ *   played: number, ignored: { index: number, qty: number, reason: string, unsupported: string[] }[] } }}
  *   cards[i]: { key, name, title, cost, inkwell, kind, song, singTogether, strength, willpower,
- *   lore, classifications, inks, moveCost, keywords, shift: { cost, bases: key[] } | null,
- *   abilities, worth, hereWorth, uncovered, unsupported }; copies: one card index per copy
+ *   lore, classifications, inks, moveCost, keywords, shift: { cost, discard, drops, bases: key[] } | null,
+ *   abilities, worth, hereWorth, uncovered, unsupported }; copies: one card index per copy;
+ *   fromDiscard: by event, the cards whose abilities work from the discard
  */
 export const prepareSimDeck = (analysis, nameOf, abilities = null) => {
+  // A Shift paid in ink, or with a discard or ink drops
+  const playable = (s) => s.shift.cost != null || !!s.shift.discard || !!s.shift.drops;
   const shiftsByKey = new Map(
     (analysis.profile?.shifts ?? [])
-      .filter((s) => s.shift.cost != null && s.bases.length)
-      .map((s) => [s.entry.key, { cost: s.shift.cost, bases: s.bases.map((b) => b.key) }])
+      .filter((s) => playable(s) && s.bases.length)
+      .map((s) => [s.entry.key, { cost: s.shift.cost ?? 0, discard: s.shift.discard ?? null, drops: s.shift.drops ?? 0, bases: s.bases.map((b) => b.key) }])
   );
-  const noBase = new Set((analysis.profile?.shifts ?? []).filter((s) => s.shift.cost != null && !s.bases.length).map((s) => s.entry.key));
+  const noBase = new Set((analysis.profile?.shifts ?? []).filter((s) => playable(s) && !s.bases.length).map((s) => s.entry.key));
   const known = analysis.entries.filter((e) => e.card && e.qty > 0);
   const cards = known.map(({ key, card }) => {
     const text = card.text ?? '';
     const kind = kindOf(card);
     const shift = shiftsByKey.get(key) ?? null;
-    const raw = abilities?.[abilityKey(key)];
+    const raw = fixAbilities(abilityKey(key), abilities?.[abilityKey(key)]);
     const compiled = raw ? compileAbilities(raw) : null;
     const playTriggers = compiled?.triggered.play?.filter((a) => a.trigger.on === 'SELF').length ?? 0;
     // A location's abilities for the characters at it: worth moving there
@@ -129,12 +134,21 @@ export const prepareSimDeck = (analysis, nameOf, abilities = null) => {
     };
   });
   const copies = known.flatMap((e, i) => Array.from({ length: e.qty }, () => i));
+  // The cards whose abilities work from the discard, by event: the engine looks for them there
+  const fromDiscard = {};
+  cards.forEach((card, idx) => {
+    for (const [event, list] of Object.entries(card.abilities?.triggered ?? {})) {
+      // Its own events ("when you discard this card") reach it anyway
+      if (list.some((a) => a.sourceZones?.includes('discard') && a.trigger.on !== 'SELF')) (fromDiscard[event] ??= []).push(idx);
+    }
+  });
   const ignored = known
     .map((e, index) => ({ index, qty: e.qty, reason: cards[index].uncovered, unsupported: cards[index].unsupported }))
     .filter((x) => x.reason);
   return {
     cards,
     copies,
+    fromDiscard,
     coverage: { total: copies.length, played: copies.length - ignored.reduce((s, x) => s + x.qty, 0), ignored },
   };
 };
