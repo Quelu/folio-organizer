@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { Truck, PackageCheck, X, MapPin, ChevronDown, Pencil, Check, Library } from 'lucide-react';
 import CardThumb from '../ui/CardThumb';
 import { PocketHint } from '../Trades/PocketMap';
+import ResaleWizard from './ResaleWizard';
 import { useStore } from '../../hooks/storeContext';
 import { useCardLang } from '../../hooks/useCardLang';
 import { useToast } from '../ui/toastContext';
@@ -132,6 +133,7 @@ const IncomingPurchases = ({ index }) => {
   const notify = useToast();
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(null);
+  const [putAway, setPutAway] = useState(null); // { title, items }
   const items = Object.entries(purchases).map(([id, p]) => {
     const card = index?.byId.get(p.cardId) ?? null;
     return {
@@ -158,6 +160,8 @@ const IncomingPurchases = ({ index }) => {
 
   const copies = items.reduce((s, i) => s + i.qty, 0);
   const arrived = items.filter((i) => i.status === 'arrived').reduce((s, i) => s + i.qty, 0);
+  /** Opens the page-by-page wizard on purchases that arrived: their pockets, binder by binder. */
+  const openPutAway = (title, list) => setPutAway({ title, items: list });
   const receive = (list) => {
     const snapshot = receivePurchases(
       list.map((i) => ({
@@ -208,7 +212,7 @@ const IncomingPurchases = ({ index }) => {
           </span>
           <ChevronDown size={16} className={`flex-shrink-0 text-slate-500 transition-transform ${open ? 'rotate-180' : ''}`} />
         </button>
-        <button onClick={() => receive(items)} className="btn-secondary px-3 py-1.5 text-xs">
+        <button onClick={() => openPutAway('Tout est arrivé · ranger', items)} className="btn-secondary px-3 py-1.5 text-xs">
           <PackageCheck size={14} /> Tout est arrivé : ranger
         </button>
       </div>
@@ -254,7 +258,10 @@ const IncomingPurchases = ({ index }) => {
                   {byBinder(group.items, binders).length > 1 && (
                     <span className="text-[11px] text-amber-200/90">à ranger dans {byBinder(group.items, binders).length} fardes</span>
                   )}
-                  <button onClick={() => receive(group.items)} className="btn-secondary ml-auto px-2.5 py-1 text-xs">
+                  <button
+                    onClick={() => openPutAway(`${orderLabel(group)} · ranger`, group.items)}
+                    className="btn-secondary ml-auto px-2.5 py-1 text-xs"
+                  >
                     <PackageCheck size={13} /> {group.orderId == null ? 'Tout ranger' : 'Commande reçue : ranger'}
                   </button>
                 </div>
@@ -306,6 +313,31 @@ const IncomingPurchases = ({ index }) => {
           })}
         </div>
       )}
+      <ResaleWizard
+        isOpen={Boolean(putAway)}
+        onClose={() => setPutAway(null)}
+        title={putAway?.title}
+        mode="in"
+        verb="Range dans ta farde"
+        binders={binders}
+        copies={(putAway?.items ?? [])
+          .filter((i) => i.destination && i.card)
+          .map((i) => ({
+            id: i.id,
+            binder: i.destination.binder,
+            cardNumber: i.destination.cardNumber,
+            location: i.destination.location,
+            card: i.card,
+            foil: false,
+            qty: i.qty,
+          }))}
+        aside={(putAway?.items ?? []).filter((i) => !i.destination || !i.card)}
+        onComplete={(taken) => {
+          const ids = new Set(taken.map((c) => c.id));
+          receive(putAway.items.filter((i) => ids.has(i.id) || !i.destination || !i.card));
+          setPutAway(null);
+        }}
+      />
     </section>
   );
 };

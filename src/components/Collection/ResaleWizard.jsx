@@ -9,12 +9,19 @@ import { findPocketCard } from '../../utils/catalog';
 import { getCounts } from '../../utils/cards';
 import { getCardsOnPage } from '../../utils/calculations';
 
+/** Look of the pockets to work on: copies taken out (amber), or put in (emerald, the card shown in it). */
+const MODES = {
+  out: { ring: 'ring-amber-300 shadow-[0_0_14px_rgba(251,191,36,0.3)]', badge: 'bg-amber-400', sign: '×' },
+  in: { ring: 'ring-emerald-300 shadow-[0_0_14px_rgba(52,211,153,0.3)]', badge: 'bg-emerald-400', sign: '+' },
+};
+
 /**
- * A binder page as it lies in the binder, every pocket to take copies from outlined with the
- * number to take out: one look per page instead of one per card.
- * @param {Map<string, { qty: number, foil: number }>} takes copies to take out by card number
+ * A binder page as it lies in the binder, every pocket to work on outlined with the number of
+ * copies: one look per page instead of one per card.
+ * @param {Map<string, { qty: number, foil: number, card: object }>} takes copies by card number
+ * @param {'out'|'in'} mode out: taken out of the pocket; in: put in it (the card going in is shown)
  */
-const PageMap = ({ binder, page, takes, cell = 64 }) => {
+const PageMap = ({ binder, page, takes, mode = 'out', cell = 64 }) => {
   const { index } = useCatalog();
   return (
     <div
@@ -27,11 +34,19 @@ const PageMap = ({ binder, page, takes, cell = 64 }) => {
         const { normal, foil } = getCounts(binder.cards[String(num)]);
         const take = takes.get(String(num));
         if (take) {
+          const shown = mode === 'in' ? (take.card ?? card) : card;
           return (
-            <div key={num} className="relative aspect-[5/7] rounded-md ring-2 ring-amber-300 shadow-[0_0_14px_rgba(251,191,36,0.3)] z-10">
-              {card ? <CardThumb card={card} preview={false} className="w-full h-full rounded-md" /> : <div className="w-full h-full rounded-md bg-white/10" />}
-              <span className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 px-1.5 rounded-full text-[10px] font-bold whitespace-nowrap bg-amber-400 text-slate-950 tabular-nums">
-                ×{take.qty}
+            <div key={num} className={`relative aspect-[5/7] rounded-md ring-2 z-10 ${MODES[mode].ring}`}>
+              {shown ? (
+                <CardThumb card={shown} preview={false} className={`w-full h-full rounded-md ${mode === 'in' ? 'opacity-80' : ''}`} />
+              ) : (
+                <div className="w-full h-full rounded-md bg-white/10" />
+              )}
+              <span
+                className={`absolute -bottom-1.5 left-1/2 -translate-x-1/2 px-1.5 rounded-full text-[10px] font-bold whitespace-nowrap text-slate-950 tabular-nums ${MODES[mode].badge}`}
+              >
+                {MODES[mode].sign}
+                {take.qty}
                 {take.foil > 0 && ' ✦'}
               </span>
             </div>
@@ -40,7 +55,10 @@ const PageMap = ({ binder, page, takes, cell = 64 }) => {
         return normal + foil > 0 && card ? (
           <CardThumb key={num} card={card} preview={false} className="w-full opacity-25 rounded-md" />
         ) : (
-          <div key={num} className="aspect-[5/7] rounded-md border border-dashed border-white/10 flex items-center justify-center text-[9px] text-slate-600 tabular-nums">
+          <div
+            key={num}
+            className="aspect-[5/7] rounded-md border border-dashed border-white/10 flex items-center justify-center text-[9px] text-slate-600 tabular-nums"
+          >
             {num}
           </div>
         );
@@ -49,7 +67,7 @@ const PageMap = ({ binder, page, takes, cell = 64 }) => {
   );
 };
 
-/** Copies to take out, one step per binder page, binders in sidebar order, pages front to back. */
+/** Copies to work on, one step per binder page, binders in sidebar order, pages front to back. */
 const toPages = (copies, binders) => {
   const order = new Map(binders.map((b, i) => [b.id, i]));
   const pages = new Map();
@@ -64,7 +82,26 @@ const toPages = (copies, binders) => {
     .sort((a, b) => order.get(a.binder.id) - order.get(b.binder.id) || a.page - b.page);
 };
 
-const WizardBody = ({ copies, binders, verb, onComplete, onClose }) => {
+/** What the wizard says, taking copies out or putting them in. */
+const TEXTS = {
+  out: {
+    hint: 'Un exemplaire reste dans chaque pochette.',
+    done: (n) => `${n} cartes sorties`,
+    next: 'Retire-les de tes fardes dans Folio : tu pourras annuler juste après.',
+    skipped: ' Les pages passées restent dans tes fardes.',
+    finish: (n) => `Retirer ${n} cartes de mes fardes`,
+  },
+  in: {
+    hint: 'Glisse chaque carte dans sa pochette entourée.',
+    done: (n) => `${n} cartes rangées`,
+    next: 'Ajoute-les à tes fardes dans Folio : tu pourras annuler juste après.',
+    skipped: ' Les pages passées restent en attente de réception.',
+    finish: (n) => `Ajouter ${n} cartes à mes fardes`,
+  },
+};
+
+const WizardBody = ({ copies, binders, verb, mode = 'out', aside = [], onComplete, onClose }) => {
+  const texts = TEXTS[mode];
   const cardLang = useCardLang();
   const pages = useMemo(() => toPages(copies, binders), [copies, binders]);
   const [done, setDone] = useState(() => new Set());
@@ -98,9 +135,9 @@ const WizardBody = ({ copies, binders, verb, onComplete, onClose }) => {
     ? new Map(
         page.copies.reduce((map, c) => {
           const t = map.get(c.cardNumber) ?? { qty: 0, foil: 0 };
-          map.set(c.cardNumber, { qty: t.qty + c.qty, foil: t.foil + (c.foil ? c.qty : 0) });
+          map.set(c.cardNumber, { qty: t.qty + c.qty, foil: t.foil + (c.foil ? c.qty : 0), card: c.card });
           return map;
-        }, new Map())
+        }, new Map()),
       )
     : new Map();
 
@@ -108,9 +145,7 @@ const WizardBody = ({ copies, binders, verb, onComplete, onClose }) => {
     <div className="px-6 pb-6 pt-2 space-y-5">
       <div>
         <div className="flex items-baseline justify-between text-xs">
-          <span className="text-slate-400">
-            {isEnd ? 'Terminé' : `Page ${at + 1} sur ${pages.length}`}
-          </span>
+          <span className="text-slate-400">{isEnd ? 'Terminé' : `Page ${at + 1} sur ${pages.length}`}</span>
           <span className="tabular-nums text-slate-400">
             <b className={qtyOf(taken) === total ? 'text-emerald-300' : 'text-white'}>{qtyOf(taken)}</b>/{total} cartes
           </span>
@@ -127,7 +162,7 @@ const WizardBody = ({ copies, binders, verb, onComplete, onClose }) => {
                 Page {page.page} · feuille {page.copies[0].location.sheet} {page.copies[0].location.side}
               </div>
             </div>
-            <PageMap binder={page.binder} page={page.page} takes={takes} />
+            <PageMap binder={page.binder} page={page.page} takes={takes} mode={mode} />
           </div>
           <div className="min-w-0">
             <div className="text-xs uppercase tracking-wider text-slate-500 mb-2">{verb}</div>
@@ -145,7 +180,7 @@ const WizardBody = ({ copies, binders, verb, onComplete, onClose }) => {
                 </li>
               ))}
             </ul>
-            <p className="text-xs text-slate-500 mt-3">Un exemplaire reste dans chaque pochette.</p>
+            <p className="text-xs text-slate-500 mt-3">{texts.hint}</p>
             {done.has(page.id) && (
               <p className="flex items-center gap-1.5 text-xs text-emerald-300 mt-2">
                 <Check size={14} /> Page faite
@@ -156,13 +191,16 @@ const WizardBody = ({ copies, binders, verb, onComplete, onClose }) => {
       ) : (
         <div className="py-8 text-center space-y-2">
           <PackageCheck size={28} className="mx-auto text-emerald-300" />
-          <p className="text-sm text-white font-semibold">
-            {qtyOf(taken) === total ? `${total} cartes sorties` : `${qtyOf(taken)}/${total} cartes sorties`}
-          </p>
+          <p className="text-sm text-white font-semibold">{texts.done(qtyOf(taken) === total ? total : `${qtyOf(taken)}/${total}`)}</p>
           <p className="text-xs text-slate-400">
-            Retire-les de tes fardes dans Folio : tu pourras annuler juste après.
-            {qtyOf(taken) < total && ' Les pages passées restent dans tes fardes.'}
+            {texts.next}
+            {qtyOf(taken) < total && texts.skipped}
           </p>
+          {aside.length > 0 && (
+            <p className="text-xs text-amber-200/90">
+              {qtyOf(aside)} carte{qtyOf(aside) > 1 ? 's' : ''} sans farde pour leur chapitre : garde-les à part.
+            </p>
+          )}
         </div>
       )}
 
@@ -199,8 +237,12 @@ const WizardBody = ({ copies, binders, verb, onComplete, onClose }) => {
               <button onClick={onClose} className="btn-secondary px-3 py-2">
                 Fermer
               </button>
-              <button onClick={() => onComplete(taken)} disabled={taken.length === 0} className="btn-primary px-4 py-2">
-                <PackageCheck size={15} /> Retirer {qtyOf(taken)} cartes de mes fardes
+              <button
+                onClick={() => onComplete(taken)}
+                disabled={taken.length === 0 && aside.length === 0}
+                className="btn-primary px-4 py-2"
+              >
+                <PackageCheck size={15} /> {texts.finish(qtyOf(taken))}
               </button>
             </>
           )}
@@ -212,9 +254,10 @@ const WizardBody = ({ copies, binders, verb, onComplete, onClose }) => {
 };
 
 /**
- * Guided pass to take surplus copies out of the binders, page by page, then remove them from
- * the collection (sold, or gone in a lot).
+ * Guided pass through the binders, page by page: to take surplus copies out (sold, or gone in a
+ * lot), or to put received copies in their pockets (mode in), then update the collection.
  * @param {{ id, binder, cardNumber, location, card, foil, qty }[]} copies
+ * @param {object[]} [aside] mode in: copies with no binder for their chapter, kept aside
  * @param {(taken: object[]) => void} onComplete the copies of the pages done
  */
 const ResaleWizard = ({ isOpen, onClose, title, ...props }) => (
