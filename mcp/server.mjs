@@ -658,7 +658,8 @@ tool(
     for (const unit of list.units) {
       const name = unit.decks.map((d) => `« ${d.name} »`).join(', ');
       const label = unit.grouped ? `Variantes montées une à la fois ${name}` : `${name}${unit.locked ? ' (verrouillé)' : ''}`;
-      lines.push(`${label} : ${unit.missing ? `${plural(unit.missing, 'copie')} à trouver` : 'complet'}`);
+      const status = unit.missing ? `${plural(unit.missing, 'copie')} à trouver` : unit.awaiting ? 'complet à la réception' : 'complet';
+      lines.push(`${label} : ${status}${unit.awaiting ? ` (${unit.awaiting} en attente de réception)` : ''}`);
       for (const c of unit.cards.filter((x) => x.missing > 0)) {
         lines.push(`  ${c.missing}× ${c.card ? cite(c.card) : c.name} (${c.owned}/${c.need})${c.alsoBinder ? ' — aussi pour une farde' : ''}`);
       }

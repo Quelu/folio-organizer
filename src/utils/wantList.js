@@ -114,7 +114,7 @@ export const suggestDeckGroups = (decks, groups = [], dismissed = []) => {
  *   incoming: purchases waiting for delivery, { [id]: { cardId, qty } }
  * @returns {{
  *   binders: { binder, wanted: { card, key, cardNumber, alsoDeck: boolean }[], awaiting: number, owned: number, total: number }[],
- *   units: { id, decks, locked, grouped, cards: { key, card, need, owned, missing, decks: { deck, qty, missing }[], alsoBinder: boolean, sharedWith: object[] }[], missing: number, need: number }[],
+ *   units: { id, decks, locked, grouped, cards: { key, card, need, owned, awaiting, missing, decks: { deck, qty, missing }[], alsoBinder: boolean, sharedWith: object[] }[], missing: number, need: number, awaiting: number }[],
  *   cards: { key, card, pockets: object[], deckMissing: number, copies: number, both: number }[],
  *   totals: { copies: number, binderOnly: number, deckOnly: number, both: number }
  * }}
@@ -173,7 +173,7 @@ export const getWantList = ({
   }
 
   // Deck needs per card and unit
-  const units = getDeckUnits(decks, groups).map((u) => ({ ...u, cards: [], missing: 0, need: 0 }));
+  const units = getDeckUnits(decks, groups).map((u) => ({ ...u, cards: [], missing: 0, need: 0, awaiting: 0 }));
   const unitOfDeck = new Map(units.flatMap((u) => u.decks.map((d) => [d.id, u])));
   const deckMissingByKey = new Map();
   const usage = getDeckUsage(units.flatMap((u) => u.decks));
@@ -186,14 +186,19 @@ export const getWantList = ({
     const priority = (unit) =>
       unit.locked ? Infinity : unit.decks.reduce((s, d) => s + (allocations[key]?.[d.id] ?? 0), 0);
     const ordered = [...byUnit.keys()].sort((a, b) => priority(b) - priority(a) || units.indexOf(a) - units.indexOf(b));
-    let free = getOwned(collection, key) + (incomingByKey.get(key) ?? 0);
+    // Copies in the binders first, then the ones bought and on their way
+    let free = getOwned(collection, key);
+    let freeIncoming = incomingByKey.get(key) ?? 0;
     let keyMissing = 0;
     const lines = [];
     for (const unit of ordered) {
       const unitUses = byUnit.get(unit);
       const need = Math.max(...unitUses.map((u) => u.qty));
-      const owned = Math.min(need, free);
-      free -= owned;
+      const inHand = Math.min(need, free);
+      free -= inHand;
+      const awaiting = Math.min(need - inHand, freeIncoming);
+      freeIncoming -= awaiting;
+      const owned = inHand + awaiting;
       const missing = need - owned;
       keyMissing += missing;
       lines.push({
@@ -204,6 +209,7 @@ export const getWantList = ({
           name: unitUses[0].deck.cards.find((c) => c.key === key)?.name ?? key,
           need,
           owned,
+          awaiting,
           missing,
           decks: unitUses.map((u) => ({ deck: u.deck, qty: u.qty, missing: Math.max(0, u.qty - owned) })),
           alsoBinder: false,
@@ -216,6 +222,7 @@ export const getWantList = ({
       unit.cards.push(line);
       unit.need += line.need;
       unit.missing += line.missing;
+      unit.awaiting += line.awaiting;
     }
     if (keyMissing > 0) deckMissingByKey.set(key, keyMissing);
   }

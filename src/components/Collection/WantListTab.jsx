@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Heart, Library, Swords, ChevronDown, Check, Lock, Link2, Unlink, X, MapPin, ShoppingBag } from 'lucide-react';
+import { Heart, Library, Swords, ChevronDown, Check, Lock, Link2, Unlink, X, MapPin, ShoppingBag, Truck } from 'lucide-react';
 import ProgressBar from '../ui/ProgressBar';
 import CardThumb from '../ui/CardThumb';
 import CopyButton from '../ui/CopyButton';
@@ -161,8 +161,19 @@ const DeckLine = ({ line, unit, colorOf, onOpenDeck, onBought }) => {
       <span className="text-xs text-slate-400 tabular-nums whitespace-nowrap" title="Copies possédées pour ce deck / copies jouées">
         <b className="text-white">{line.owned}</b>/{line.need}
       </span>
-      <span className="w-10 text-right text-sm font-bold tabular-nums text-orange-300">+{line.missing}</span>
-      {line.card && <BoughtButton onClick={onBought} title={`${line.missing} achetée${line.missing > 1 ? 's' : ''} : en attente de réception`} />}
+      {line.awaiting > 0 && (
+        <span className="text-[11px] font-semibold text-emerald-300 tabular-nums whitespace-nowrap" title="Achetées, en attente de réception">
+          {line.awaiting} en attente
+        </span>
+      )}
+      {line.missing > 0 ? (
+        <>
+          <span className="w-10 text-right text-sm font-bold tabular-nums text-orange-300">+{line.missing}</span>
+          {line.card && <BoughtButton onClick={onBought} title={`${line.missing} achetée${line.missing > 1 ? 's' : ''} : en attente de réception`} />}
+        </>
+      ) : (
+        <Truck size={14} className="text-emerald-300 flex-shrink-0" aria-label="Arrive avec un achat" />
+      )}
     </li>
   );
 };
@@ -210,7 +221,7 @@ const WantListTab = ({ ctx, prices, onOpenDeck }) => {
             .map((u) => ({
               ...u,
               lines: u.cards
-                .filter((l) => l.missing > 0 && (!l.card ? !query : matchesCard(l.card, lineFilters, query, ctx)))
+                .filter((l) => (l.missing > 0 || l.awaiting > 0) && (!l.card ? !query : matchesCard(l.card, lineFilters, query, ctx)))
                 .sort((a, b) => b.missing - a.missing || cardLang.keyName(a.key, a.name).localeCompare(cardLang.keyName(b.key, b.name))),
             }))
         : [];
@@ -262,7 +273,7 @@ const WantListTab = ({ ctx, prices, onOpenDeck }) => {
     { key: 'both', label: 'Les deux', value: totals.both },
     { key: 'deck', label: 'Decks', value: totals.deckOnly },
   ];
-  const completeUnits = shown.units.filter((u) => u.missing === 0 && !filters.decks.length);
+  const completeUnits = shown.units.filter((u) => u.missing === 0 && u.awaiting === 0 && !filters.decks.length);
   const wantingUnits = shown.units.filter((u) => u.lines.length > 0);
 
   return (
@@ -474,21 +485,32 @@ const WantListTab = ({ ctx, prices, onOpenDeck }) => {
                         </span>
                       )}
                       <span className="text-[11px] text-slate-500 tabular-nums">
-                        {unit.need - unit.missing}/{unit.need} copies possédées
+                        {unit.need - unit.missing - unit.awaiting}/{unit.need} copies possédées
+                        {unit.awaiting > 0 && <span className="text-emerald-300"> · {unit.awaiting} en attente de réception</span>}
                       </span>
                     </span>
                   </span>
-                  <span className={`text-sm font-bold tabular-nums whitespace-nowrap ${TONES.deck.text}`}>
-                    {unit.lines.reduce((s, l) => s + l.missing, 0)} à trouver
-                  </span>
+                  {unit.lines.some((l) => l.missing > 0) ? (
+                    <span className={`text-sm font-bold tabular-nums whitespace-nowrap ${TONES.deck.text}`}>
+                      {unit.lines.reduce((s, l) => s + l.missing, 0)} à trouver
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1.5 text-sm font-bold whitespace-nowrap text-emerald-300">
+                      <Truck size={14} /> complet à la réception
+                    </span>
+                  )}
                 </>
               }
             >
               <div className="flex flex-wrap items-center gap-2 mb-1">
-                <WantsCopy lines={deckWants(unit.lines, index)} />
-                <button onClick={() => bought({ lines: unit.lines })} className="btn-secondary px-2.5 py-1 text-xs">
-                  <ShoppingBag size={13} /> Tout marquer acheté ({unit.lines.reduce((s, l) => s + l.missing, 0)})
-                </button>
+                {unit.lines.some((l) => l.missing > 0) && (
+                  <>
+                    <WantsCopy lines={deckWants(unit.lines.filter((l) => l.missing > 0), index)} />
+                    <button onClick={() => bought({ lines: unit.lines.filter((l) => l.missing > 0) })} className="btn-secondary px-2.5 py-1 text-xs">
+                      <ShoppingBag size={13} /> Tout marquer acheté ({unit.lines.reduce((s, l) => s + l.missing, 0)})
+                    </button>
+                  </>
+                )}
               </div>
               <ul className="divide-y divide-white/5">
                 {unit.lines.map((line) => (
