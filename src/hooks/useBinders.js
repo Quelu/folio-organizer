@@ -667,6 +667,19 @@ export const useBinders = () => {
     return Object.keys(added);
   }, []);
 
+  /**
+   * Puts purchases in an order (a Cardmarket order number, or any name the user gives), so a parcel
+   * is put away on its own. orderId null: no order.
+   */
+  const setPurchaseOrder = useCallback((ids, orderId) => {
+    setState((prev) => ({
+      ...prev,
+      purchases: Object.fromEntries(
+        Object.entries(prev.purchases).map(([id, p]) => [id, ids.includes(id) ? { ...p, orderId: orderId?.trim() || null } : p])
+      ),
+    }));
+  }, []);
+
   /** Forgets purchases (cancelled, or bought by mistake). Returns what restores them. */
   const cancelPurchases = useCallback((ids) => {
     const removed = Object.fromEntries(ids.filter((id) => stateRef.current.purchases[id]).map((id) => [id, stateRef.current.purchases[id]]));
@@ -832,6 +845,7 @@ export const useBinders = () => {
     applyCardmarketJournal,
     markBought,
     cancelPurchases,
+    setPurchaseOrder,
     restorePurchases,
     receivePurchases,
     undoReceive,
