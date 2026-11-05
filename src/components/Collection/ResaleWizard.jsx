@@ -100,8 +100,8 @@ const TEXTS = {
   },
 };
 
-const WizardBody = ({ copies, binders, verb, mode = 'out', aside = [], onComplete, onClose }) => {
-  const texts = TEXTS[mode];
+const WizardBody = ({ copies, binders, verb, mode = 'out', texts: ownTexts, aside = [], onComplete, onClose }) => {
+  const texts = { ...TEXTS[mode], ...ownTexts };
   const cardLang = useCardLang();
   const pages = useMemo(() => toPages(copies, binders), [copies, binders]);
   const [done, setDone] = useState(() => new Set());
@@ -258,6 +258,7 @@ const WizardBody = ({ copies, binders, verb, mode = 'out', aside = [], onComplet
  * lot), or to put received copies in their pockets (mode in), then update the collection.
  * @param {{ id, binder, cardNumber, location, card, foil, qty }[]} copies
  * @param {object[]} [aside] mode in: copies with no binder for their chapter, kept aside
+ * @param {Partial<typeof TEXTS.out>} [texts] what the wizard says, in place of the mode's defaults
  * @param {(taken: object[]) => void} onComplete the copies of the pages done
  */
 const ResaleWizard = ({ isOpen, onClose, title, ...props }) => (
